@@ -1,0 +1,171 @@
+{
+  "id": "edc-realm",
+  "realm": "edc-realm",
+  "enabled": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "ADMIN",
+        "description": "System Administrator"
+      },
+      {
+        "name": "MONITOR",
+        "description": "Clinical Research Associate / Monitor"
+      },
+      {
+        "name": "DATA_ENTRY",
+        "description": "Clinical Research Coordinator"
+      },
+      {
+        "name": "PATIENT",
+        "description": "Trial Participant"
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@trial.com",
+      "firstName": "System",
+      "lastName": "Administrator",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ADMIN"
+      ]
+    },
+    {
+      "username": "crc1",
+      "enabled": true,
+      "email": "crc1@site1.org",
+      "firstName": "John",
+      "lastName": "CRC Site 1",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "DATA_ENTRY"
+      ],
+      "attributes": {
+        "site_id": ["1"]
+      }
+    },
+    {
+      "username": "crc2",
+      "enabled": true,
+      "email": "crc2@site2.org",
+      "firstName": "Jane",
+      "lastName": "CRC Site 2",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "DATA_ENTRY"
+      ],
+      "attributes": {
+        "site_id": ["2"]
+      }
+    },
+    {
+      "username": "cra",
+      "enabled": true,
+      "email": "cra@sponsor.com",
+      "firstName": "Alice",
+      "lastName": "CRA Monitor",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "MONITOR"
+      ]
+    },
+    {
+      "username": "patient1",
+      "enabled": true,
+      "email": "patient1@home.com",
+      "firstName": "Robert",
+      "lastName": "Patient 1",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "PATIENT"
+      ],
+      "attributes": {
+        "site_id": ["1"],
+        "patient_id": ["1"]
+      }
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "edc-frontend",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "rootUrl": "http://localhost:3000",
+      "baseUrl": "/",
+      "redirectUris": [
+        "http://localhost:3000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000"
+      ],
+      "protocolMappers": [
+        {
+          "name": "site_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "site_id",
+            "claim.name": "site_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "patient_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "patient_id",
+            "claim.name": "patient_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "edc-backend",
+      "enabled": true,
+      "bearerOnly": true
+    }
+  ]
+}
