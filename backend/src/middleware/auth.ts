@@ -14,7 +14,7 @@ export interface AuthenticatedRequest extends Request {
   };
 }
 
-const keycloakUrl = process.env.KEYCLOAK_URL || 'http://localhost:8080';
+const keycloakUrl = process.env.KEYCLOAK_URL || 'http://localhost:8081';
 const realm = process.env.KEYCLOAK_REALM || 'edc-realm';
 const jwksUri = `${keycloakUrl}/realms/${realm}/protocol/openid-connect/certs`;
 

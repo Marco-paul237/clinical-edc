@@ -3,15 +3,33 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../../context/AuthContext';
-import { Plus, Check, X, Building, Calendar, User, Eye, ClipboardList } from 'lucide-react';
+import { 
+  Plus, 
+  Check, 
+  X, 
+  Building, 
+  Calendar, 
+  User, 
+  Eye, 
+  Grid3X3, 
+  List, 
+  Lock, 
+  Unlock, 
+  AlertTriangle, 
+  CheckCircle2, 
+  HelpCircle 
+} from 'lucide-react';
 
 export default function PatientsPage() {
   const { user, apiFetch } = useAuth();
   
   const [patients, setPatients] = useState<any[]>([]);
   const [sites, setSites] = useState<any[]>([]);
+  const [queries, setQueries] = useState<any[]>([]);
+  const [formsMap, setFormsMap] = useState<Record<number, any[]>>({});
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'matrix' | 'list'>('matrix');
   const [error, setError] = useState<string | null>(null);
 
   // Form states for new patient
@@ -29,12 +47,31 @@ export default function PatientsPage() {
       const siteList = await apiFetch('/api/sites');
       setSites(siteList);
 
+      try {
+        const queriesList = await apiFetch('/api/queries');
+        setQueries(queriesList);
+      } catch (err) {
+        // Fallback if queries table doesn't exist yet
+      }
+
       // Pre-set site ID for form
-      if (user?.role === 'DATA_ENTRY' && user.site_id) {
+      if (user?.site_id) {
         setSelectedSiteId(user.site_id.toString());
       } else if (siteList.length > 0) {
         setSelectedSiteId(siteList[0].id.toString());
       }
+
+      // Fetch forms for each patient to resolve statuses
+      const tempFormsMap: Record<number, any[]> = {};
+      for (const p of patientList) {
+        try {
+          const forms = await apiFetch(`/api/forms/patient/${p.id}`);
+          tempFormsMap[p.id] = forms;
+        } catch (e) {
+          tempFormsMap[p.id] = [];
+        }
+      }
+      setFormsMap(tempFormsMap);
       
       setLoading(false);
     } catch (err: any) {
@@ -52,8 +89,9 @@ export default function PatientsPage() {
 
   const handleRegisterPatient = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!initials || !birthDate || !gender || !selectedSiteId) {
-      alert('All fields are required');
+    const targetSiteId = user?.site_id || (selectedSiteId ? parseInt(selectedSiteId, 10) : null);
+    if (!initials || !birthDate || !gender || !targetSiteId) {
+      alert('All fields are required, and a clinical study site must be active.');
       return;
     }
 
@@ -64,7 +102,7 @@ export default function PatientsPage() {
           initials,
           birth_date: birthDate,
           gender,
-          site_id: parseInt(selectedSiteId, 10)
+          site_id: targetSiteId
         })
       });
 
@@ -79,30 +117,99 @@ export default function PatientsPage() {
     }
   };
 
+  // Resolve status for a specific visit event of a patient
+  const getEventStatus = (patientId: number, eventName: string) => {
+    const forms = formsMap[patientId] || [];
+    const patientForms = forms.filter((f: any) => f.event_name === eventName);
+    
+    if (patientForms.length === 0) {
+      return { code: 'NOT_STARTED', label: 'Scheduled', color: '#6b7280', icon: HelpCircle };
+    }
+
+    // Check if any form for this event is frozen
+    const isFrozen = patientForms.some((f: any) => f.is_frozen);
+    if (isFrozen) {
+      return { code: 'LOCKED', label: 'Locked & Verified', color: '#6366f1', icon: Lock };
+    }
+
+    // Check for open/resolved discrepancy notes linked to forms in this event
+    const formIds = patientForms.map((f: any) => f.id);
+    const formQueries = queries.filter(q => formIds.includes(q.form_id));
+    const hasUnresolved = formQueries.some(q => q.status === 'OPEN' || q.status === 'RESOLVED');
+
+    if (hasUnresolved) {
+      return { code: 'IN_PROGRESS', label: 'Data Queries Pending', color: '#f59e0b', icon: AlertTriangle };
+    }
+
+    return { code: 'COMPLETED', label: 'Entry Completed', color: '#10b981', icon: CheckCircle2 };
+  };
+
   if (loading) {
     return <div style={{ color: 'var(--color-text-muted)', padding: '2rem' }}>Loading study patients...</div>;
   }
 
   const showAddBtn = user?.role === 'DATA_ENTRY' || user?.role === 'ADMIN';
+  const studyEvents = ['Screening', 'Baseline', 'Week 4', 'Week 12'];
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Trial Patients</h1>
+          <h1 className="page-title">Trial Subject Registry</h1>
           <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
             {user?.role === 'DATA_ENTRY' 
-              ? 'Assigned Patient Records (Restricted to Local Site)' 
-              : 'Study Patient Records (All Sites)'}
+              ? 'Site Patients case entry dashboard' 
+              : 'Study Subjects case entry dashboard (All Sites)'}
           </p>
         </div>
 
-        {showAddBtn && (
-          <button onClick={() => setIsModalOpen(true)} className="btn btn-primary">
-            <Plus style={{ width: '16px' }} />
-            Register Patient
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          {/* View Toggle */}
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '0.25rem',
+            display: 'flex',
+            gap: '0.25rem'
+          }}>
+            <button 
+              onClick={() => setViewMode('matrix')}
+              className="btn btn-secondary"
+              style={{
+                padding: '0.4rem 0.8rem',
+                fontSize: '0.8rem',
+                background: viewMode === 'matrix' ? 'rgba(20, 184, 166, 0.15)' : 'none',
+                color: viewMode === 'matrix' ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                borderColor: 'transparent'
+              }}
+            >
+              <Grid3X3 style={{ width: '14px' }} />
+              Event Matrix
+            </button>
+            <button 
+              onClick={() => setViewMode('list')}
+              className="btn btn-secondary"
+              style={{
+                padding: '0.4rem 0.8rem',
+                fontSize: '0.8rem',
+                background: viewMode === 'list' ? 'rgba(20, 184, 166, 0.15)' : 'none',
+                color: viewMode === 'list' ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                borderColor: 'transparent'
+              }}
+            >
+              <List style={{ width: '14px' }} />
+              Subject List
+            </button>
+          </div>
+
+          {showAddBtn && (
+            <button onClick={() => setIsModalOpen(true)} className="btn btn-primary">
+              <Plus style={{ width: '16px' }} />
+              Register Subject
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -111,70 +218,182 @@ export default function PatientsPage() {
         </div>
       )}
 
-      {/* Patients Table */}
-      <div className="table-container">
-        {patients.length === 0 ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-            No patients registered for this study yet.
+      {/* MATRIX VIEW */}
+      {viewMode === 'matrix' ? (
+        <div>
+          <div className="table-container">
+            {patients.length === 0 ? (
+              <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                No subjects registered for this study.
+              </div>
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Subject ID</th>
+                    <th>Initials</th>
+                    <th>Site Location</th>
+                    <th>Consent</th>
+                    {studyEvents.map(event => (
+                      <th key={event} style={{ textAlign: 'center', width: '140px' }}>
+                        {event} Visit
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {patients.map((patient) => (
+                    <tr key={patient.id}>
+                      <td style={{ fontWeight: 'bold', fontFamily: 'monospace' }}>
+                        PT-{String(patient.id).padStart(3, '0')}
+                      </td>
+                      <td>{patient.initials}</td>
+                      <td>{patient.site_name}</td>
+                      <td>
+                        {patient.consent_signed ? (
+                          <span style={{ color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem' }}>
+                            <Check style={{ width: '14px' }} />
+                            Signed
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--color-warning)', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem' }}>
+                            <X style={{ width: '14px' }} />
+                            Pending
+                          </span>
+                        )}
+                      </td>
+                      
+                      {studyEvents.map(event => {
+                        const status = getEventStatus(patient.id, event);
+                        const IconComponent = status.icon;
+                        
+                        return (
+                          <td key={event} style={{ textAlign: 'center' }}>
+                            <Link 
+                              href={`/patients/${patient.id}?event=${event}`}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '36px',
+                                height: '36px',
+                                borderRadius: '50%',
+                                background: 'rgba(255,255,255,0.03)',
+                                border: `1px solid ${status.color}40`,
+                                color: status.color,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                outline: 'none'
+                              }}
+                              title={`${event} Visit: ${status.label}`}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.transform = 'scale(1.1)';
+                                e.currentTarget.style.boxShadow = `0 0 12px ${status.color}30`;
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.transform = 'scale(1)';
+                                e.currentTarget.style.boxShadow = 'none';
+                              }}
+                            >
+                              <IconComponent style={{ width: '18px', height: '18px' }} />
+                            </Link>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
-        ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Patient ID</th>
-                <th>Initials</th>
-                <th>Site Location</th>
-                <th>Birth Date</th>
-                <th>Gender</th>
-                <th>Consent Status</th>
-                <th>Study Status</th>
-                <th style={{ textAlign: 'right' }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {patients.map((patient) => (
-                <tr key={patient.id}>
-                  <td style={{ fontWeight: 'bold', fontFamily: 'monospace' }}>
-                    PT-{String(patient.id).padStart(3, '0')}
-                  </td>
-                  <td>{patient.initials}</td>
-                  <td>{patient.site_name}</td>
-                  <td>{new Date(patient.birth_date).toLocaleDateString()}</td>
-                  <td>{patient.gender}</td>
-                  <td>
-                    {patient.consent_signed ? (
-                      <span style={{ color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem' }}>
-                        <Check style={{ width: '16px' }} />
-                        Signed
-                      </span>
-                    ) : (
-                      <span style={{ color: 'var(--color-warning)', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem' }}>
-                        <X style={{ width: '16px' }} />
-                        Pending
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <span className={`badge ${
-                      patient.status === 'ENROLLED' ? 'badge-enrolled' :
-                      patient.status === 'COMPLETED' ? 'badge-completed' :
-                      'badge-screening'
-                    }`}>
-                      {patient.status}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <Link href={`/patients/${patient.id}`} className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}>
-                      <Eye style={{ width: '14px' }} />
-                      View CRF
-                    </Link>
-                  </td>
+
+          {/* Matrix Legend */}
+          <div className="card" style={{ padding: '1.25rem', display: 'flex', gap: '2rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
+              Event Status Legend:
+            </span>
+            <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.85rem' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#6b7280' }}>
+                <HelpCircle style={{ width: '16px' }} /> Scheduled / Not Started
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#f59e0b' }}>
+                <AlertTriangle style={{ width: '16px' }} /> Active Queries / Discrepancy Note
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#10b981' }}>
+                <CheckCircle2 style={{ width: '16px' }} /> Data Entry Completed
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#6366f1' }}>
+                <Lock style={{ width: '16px' }} /> Form Verified & Frozen
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* LIST VIEW */
+        <div className="table-container">
+          {patients.length === 0 ? (
+            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+              No subjects registered for this study yet.
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Subject ID</th>
+                  <th>Initials</th>
+                  <th>Site Location</th>
+                  <th>Birth Date</th>
+                  <th>Gender</th>
+                  <th>Consent Status</th>
+                  <th>Study Status</th>
+                  <th style={{ textAlign: 'right' }}>Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
+              <tbody>
+                {patients.map((patient) => (
+                  <tr key={patient.id}>
+                    <td style={{ fontWeight: 'bold', fontFamily: 'monospace' }}>
+                      PT-{String(patient.id).padStart(3, '0')}
+                    </td>
+                    <td>{patient.initials}</td>
+                    <td>{patient.site_name}</td>
+                    <td>{new Date(patient.birth_date).toLocaleDateString()}</td>
+                    <td>{patient.gender}</td>
+                    <td>
+                      {patient.consent_signed ? (
+                        <span style={{ color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem' }}>
+                          <Check style={{ width: '16px' }} />
+                          Signed
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--color-warning)', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem' }}>
+                          <X style={{ width: '16px' }} />
+                          Pending
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <span className={`badge ${
+                        patient.status === 'ENROLLED' ? 'badge-enrolled' :
+                        patient.status === 'COMPLETED' ? 'badge-completed' :
+                        'badge-screening'
+                      }`}>
+                        {patient.status}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <Link href={`/patients/${patient.id}`} className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}>
+                        <Eye style={{ width: '14px' }} />
+                        View CRF
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
       {/* Registration Modal Overlay */}
       {isModalOpen && (
@@ -225,22 +444,17 @@ export default function PatientsPage() {
 
               <div className="form-group">
                 <label className="form-label">Clinical Study Site</label>
-                {user?.role === 'DATA_ENTRY' ? (
-                  <select disabled className="form-select" value={selectedSiteId}>
-                    {sites.map(s => (
-                      <option key={s.id} value={s.id}>{s.name} ({s.location})</option>
-                    ))}
-                  </select>
+                {user?.site_id ? (
+                  <input 
+                    type="text" 
+                    disabled 
+                    className="form-input" 
+                    value={sites.find(s => s.id === user.site_id)?.name || 'Loading Site Details...'} 
+                  />
                 ) : (
-                  <select 
-                    value={selectedSiteId} 
-                    onChange={(e) => setSelectedSiteId(e.target.value)}
-                    className="form-select"
-                  >
-                    {sites.map(s => (
-                      <option key={s.id} value={s.id}>{s.name} ({s.location})</option>
-                    ))}
-                  </select>
+                  <div style={{ color: 'var(--color-error)', fontSize: '0.85rem', fontWeight: 500 }}>
+                    Please select a study site from the top header banner to register patients.
+                  </div>
                 )}
               </div>
 
@@ -248,7 +462,7 @@ export default function PatientsPage() {
                 <button type="button" onClick={() => setIsModalOpen(false)} className="btn btn-secondary">
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary">
+                <button type="submit" className="btn btn-primary" disabled={!user?.site_id}>
                   Confirm Registration
                 </button>
               </div>

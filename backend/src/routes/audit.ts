@@ -96,4 +96,15 @@ router.post('/export', authenticateToken, requireRoles(['MONITOR', 'ADMIN']), as
   }
 });
 
+// Fetch safety alerts (MONITOR and ADMIN only)
+router.get('/safety-alerts', authenticateToken, requireRoles(['MONITOR', 'ADMIN']), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = await pool.query('SELECT * FROM safety_alerts ORDER BY dispatched_at DESC');
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to retrieve safety alerts' });
+  }
+});
+
 export default router;

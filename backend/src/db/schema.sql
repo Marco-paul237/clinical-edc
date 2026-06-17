@@ -1,5 +1,14 @@
 -- Create schema for EDC clinical trials portal
 
+DROP TABLE IF EXISTS safety_alerts CASCADE;
+DROP TABLE IF EXISTS imaging_scans CASCADE;
+DROP TABLE IF EXISTS audit_logs CASCADE;
+DROP TABLE IF EXISTS queries CASCADE;
+DROP TABLE IF EXISTS clinical_forms CASCADE;
+DROP TABLE IF EXISTS patients CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS sites CASCADE;
+
 CREATE TABLE IF NOT EXISTS sites (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
@@ -13,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(255) NOT NULL,
   role VARCHAR(50) NOT NULL CHECK (role IN ('ADMIN', 'MONITOR', 'DATA_ENTRY', 'PATIENT')),
   site_id INT REFERENCES sites(id),
+  password VARCHAR(255) DEFAULT 'password',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -33,6 +43,7 @@ CREATE TABLE IF NOT EXISTS patients (
 CREATE TABLE IF NOT EXISTS clinical_forms (
   id SERIAL PRIMARY KEY,
   patient_id INT REFERENCES patients(id) NOT NULL,
+  event_name VARCHAR(100) DEFAULT 'Screening' CHECK (event_name IN ('Screening', 'Baseline', 'Week 4', 'Week 12', 'Adverse Event')),
   form_type VARCHAR(50) NOT NULL CHECK (form_type IN ('VITALS', 'LABS', 'ADVERSE_EVENTS')),
   entered_by_id VARCHAR(255) REFERENCES users(id),
   data JSONB NOT NULL,
@@ -41,6 +52,19 @@ CREATE TABLE IF NOT EXISTS clinical_forms (
   frozen_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS queries (
+  id SERIAL PRIMARY KEY,
+  form_id INT REFERENCES clinical_forms(id) ON DELETE CASCADE,
+  field_name VARCHAR(100) NOT NULL,
+  status VARCHAR(50) DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'RESOLVED', 'CLOSED')),
+  description TEXT NOT NULL,
+  resolution TEXT,
+  created_by_id VARCHAR(255) REFERENCES users(id),
+  resolved_by_id VARCHAR(255) REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  resolved_at TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS audit_logs (
@@ -58,6 +82,33 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS imaging_scans (
+  id SERIAL PRIMARY KEY,
+  patient_id INT REFERENCES patients(id) ON DELETE CASCADE,
+  scan_type VARCHAR(50) NOT NULL,
+  scan_date DATE NOT NULL,
+  slice_count INT NOT NULL,
+  metadata JSONB NOT NULL,
+  raw_image_url TEXT,
+  system_report TEXT,
+  validated_report TEXT,
+  is_validated BOOLEAN DEFAULT FALSE,
+  validated_by_id VARCHAR(100),
+  validated_at TIMESTAMP,
+  signature_hash VARCHAR(256),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS safety_alerts (
+  id SERIAL PRIMARY KEY,
+  form_id INT REFERENCES clinical_forms(id) ON DELETE CASCADE,
+  severity VARCHAR(50) NOT NULL,
+  alert_message TEXT NOT NULL,
+  sent_to VARCHAR(255) NOT NULL,
+  status VARCHAR(50) DEFAULT 'DISPATCHED',
+  dispatched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Seed study sites
 INSERT INTO sites (id, name, location) VALUES 
 (1, 'Berlin Charité Medical Center', 'Germany')
@@ -68,10 +119,10 @@ INSERT INTO sites (id, name, location) VALUES
 ON CONFLICT DO NOTHING;
 
 -- Seed mock users to correspond to the mock auth developer mode
-INSERT INTO users (id, email, name, role, site_id) VALUES
-('mock-admin', 'admin@trial.com', 'System Admin', 'ADMIN', NULL),
-('mock-crc-1', 'crc1@site1.org', 'John CRC Site 1', 'DATA_ENTRY', 1),
-('mock-crc-2', 'crc2@site2.org', 'Jane CRC Site 2', 'DATA_ENTRY', 2),
-('mock-cra', 'cra@sponsor.com', 'Alice CRA Monitor', 'MONITOR', NULL),
-('mock-patient-1', 'patient1@home.com', 'Robert Patient 1', 'PATIENT', 1)
+INSERT INTO users (id, email, name, role, site_id, password) VALUES
+('mock-admin', 'admin@trial.com', 'System Admin', 'ADMIN', NULL, 'password'),
+('mock-crc-1', 'crc1@site1.org', 'John CRC Site 1', 'DATA_ENTRY', 1, 'password'),
+('mock-crc-2', 'crc2@site2.org', 'Jane CRC Site 2', 'DATA_ENTRY', 2, 'password'),
+('mock-cra', 'cra@sponsor.com', 'Alice CRA Monitor', 'MONITOR', NULL, 'password'),
+('mock-patient-1', 'patient1@home.com', 'Robert Patient 1', 'PATIENT', 1, 'password')
 ON CONFLICT DO NOTHING;

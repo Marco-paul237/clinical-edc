@@ -2,11 +2,11 @@ version: '3.8'
 
 services:
   db:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: edc-db
     restart: always
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -21,7 +21,7 @@ services:
     container_name: edc-keycloak
     restart: always
     ports:
-      - "8080:8080"
+      - "8081:8080"
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
@@ -32,17 +32,15 @@ services:
       - ./keycloak-realm.json:/opt/keycloak/data/import/realm.json
     networks:
       - edc-network
-    depends_on:
-      - db
 
   backend:
     build: ./backend
     container_name: edc-backend
     restart: always
     ports:
-      - "5000:5000"
+      - "5001:5001"
     environment:
-      PORT: 5000
+      PORT: 5001
       DATABASE_URL: postgresql://postgres:postgres@db:5432/edc
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: edc-realm
@@ -61,8 +59,8 @@ services:
       - "3000:3000"
     environment:
       PORT: 3000
-      NEXT_PUBLIC_BACKEND_URL: http://localhost:5000
-      NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8080
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:5001
+      NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8081
       NEXT_PUBLIC_KEYCLOAK_REALM: edc-realm
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: edc-frontend
       NEXT_PUBLIC_USE_MOCK_IAM: "true"

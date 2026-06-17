@@ -23,9 +23,11 @@ export default function DashboardPage() {
     enrolledCount: 0,
     sitesCount: 0,
     formsCount: 0,
-    frozenFormsCount: 0
+    frozenFormsCount: 0,
+    openQueriesCount: 0
   });
   const [recentAudits, setRecentAudits] = useState<any[]>([]);
+  const [activeQueries, setActiveQueries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,22 +44,27 @@ export default function DashboardPage() {
         const patients = await apiFetch('/api/patients');
         // Load Sites
         const sites = await apiFetch('/api/sites');
+        // Load Queries
+        const queries = await apiFetch('/api/queries');
+        const openQueries = queries.filter((q: any) => q.status === 'OPEN' || q.status === 'RESOLVED');
 
         // Compile counts
         const enrolled = patients.filter((p: any) => p.status === 'ENROLLED').length;
         
-        // Fetch forms for each patient to compute statistics
+        // Fetch forms for all patients in parallel to avoid sequential network roundtrip latency
+        const formsPromises = patients.map(async (p: any) => {
+          try {
+            return await apiFetch(`/api/forms/patient/${p.id}`);
+          } catch (e) {
+            return [];
+          }
+        });
+        const allFormsResults = await Promise.all(formsPromises);
         let totalForms = 0;
         let frozenForms = 0;
-        
-        for (const p of patients) {
-          try {
-            const forms = await apiFetch(`/api/forms/patient/${p.id}`);
-            totalForms += forms.length;
-            frozenForms += forms.filter((f: any) => f.is_frozen).length;
-          } catch (e) {
-            // Ignore if patient forms are not readable (due to RLS or empty)
-          }
+        for (const forms of allFormsResults) {
+          totalForms += forms.length;
+          frozenForms += forms.filter((f: any) => f.is_frozen).length;
         }
 
         setStats({
@@ -65,8 +72,11 @@ export default function DashboardPage() {
           enrolledCount: enrolled,
           sitesCount: sites.length,
           formsCount: totalForms,
-          frozenFormsCount: frozenForms
+          frozenFormsCount: frozenForms,
+          openQueriesCount: openQueries.filter((q: any) => q.status === 'OPEN').length
         });
+
+        setActiveQueries(openQueries.slice(0, 5));
 
         // Load Audit Logs if allowed
         if (user.role === 'MONITOR' || user.role === 'ADMIN') {
@@ -174,7 +184,7 @@ export default function DashboardPage() {
           </div>
           <span className="stat-value">{stats.patientsCount}</span>
           <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-            Patients registered at study sites
+            Patients registered
           </span>
         </div>
 
@@ -185,7 +195,7 @@ export default function DashboardPage() {
           </div>
           <span className="stat-value">{stats.enrolledCount}</span>
           <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-            Signed informed consent forms
+            Signed consent forms
           </span>
         </div>
 
@@ -196,7 +206,7 @@ export default function DashboardPage() {
           </div>
           <span className="stat-value">{stats.sitesCount}</span>
           <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-            Authorized clinical locations
+            Clinical locations
           </span>
         </div>
 
@@ -210,12 +220,64 @@ export default function DashboardPage() {
           </div>
           <span className="stat-value">{stats.formsCount}</span>
           <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-            Vitals, Labs & Adverse Events logs
+            Forms submitted
+          </span>
+        </div>
+
+        <div className="card stat-card" onClick={() => router.push('/patients')} style={{ cursor: 'pointer', borderLeft: stats.openQueriesCount > 0 ? '2px solid var(--color-error)' : 'inherit' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <span className="stat-title">Open Queries</span>
+            <AlertTriangle style={{ color: 'var(--color-error)', width: '20px' }} />
+          </div>
+          <span className="stat-value" style={{ color: stats.openQueriesCount > 0 ? 'var(--color-error)' : 'inherit' }}>
+            {stats.openQueriesCount}
+          </span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+            Discrepancy Notes
           </span>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem' }}>
+      <div className="details-grid">
+        {/* Active Queries List */}
+        <div className="card">
+          <h3 style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <AlertTriangle style={{ color: 'var(--color-error)' }} />
+            Active Discrepancy Notes (Queries)
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {activeQueries.length === 0 ? (
+              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>No active field discrepancy queries.</p>
+            ) : (
+              activeQueries.map((query) => (
+                <div key={query.id} style={{
+                  padding: '0.75rem 1rem',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  borderLeft: `3px solid ${query.status === 'RESOLVED' ? 'var(--color-success)' : 'var(--color-error)'}`,
+                  borderRadius: '0 4px 4px 0',
+                  fontSize: '0.85rem'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                    <span style={{ fontWeight: 600 }}>Subject PT-{String(query.patient_id).padStart(3, '0')} ({query.initials})</span>
+                    <span className={`badge ${query.status === 'RESOLVED' ? 'badge-enrolled' : 'badge-screening'}`} style={{ fontSize: '0.6rem', padding: '0.1rem 0.4rem' }}>
+                      {query.status}
+                    </span>
+                  </div>
+                  <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
+                    Field: <strong>{query.field_name}</strong> in {query.form_type} ({query.event_name})
+                  </p>
+                  <p style={{ color: 'var(--color-text-main)', marginTop: '0.25rem' }}>
+                    &ldquo;{query.description}&rdquo;
+                  </p>
+                  <button onClick={() => router.push(`/patients/${query.patient_id}`)} className="btn btn-secondary" style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', marginTop: '0.5rem' }}>
+                    Go to Form
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
         {/* Recent Audits */}
         {(user?.role === 'MONITOR' || user?.role === 'ADMIN') ? (
           <div className="card">
@@ -242,7 +304,7 @@ export default function DashboardPage() {
                     fontSize: '0.85rem'
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                      <span style={{ fontWeight: 600 }}>{log.user_name} ({log.user_email})</span>
+                      <span style={{ fontWeight: 600 }}>{log.user_name}</span>
                       <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
                         {new Date(log.timestamp).toLocaleTimeString()}
                       </span>

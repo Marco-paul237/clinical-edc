@@ -11,12 +11,37 @@ import {
   LogOut, 
   Database, 
   ShieldCheck, 
-  UserCircle 
+  UserCircle,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
 
 export default function AppLayoutClient({ children }: { children: React.ReactNode }) {
-  const { user, logout, isLoading, useMockIam } = useAuth();
+  const { 
+    user, 
+    logout, 
+    isLoading, 
+    useMockIam,
+    isOffline,
+    toggleOffline,
+    syncQueue,
+    syncOfflineData,
+    switchContext
+  } = useAuth();
   const pathname = usePathname();
+
+  const [sites, setSites] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    if (user) {
+      fetch('/api/auth/sites')
+        .then(res => res.json())
+        .then(data => setSites(data))
+        .catch(err => console.error('Failed to load sites in layout:', err));
+    }
+  }, [user]);
 
   if (isLoading) {
     return (
@@ -26,20 +51,20 @@ export default function AppLayoutClient({ children }: { children: React.ReactNod
         alignItems: 'center',
         justifyContent: 'center',
         height: '100vh',
-        backgroundColor: '#0a0e17',
-        color: '#f3f4f6',
+        backgroundColor: '#f8fafc',
+        color: '#0f172a',
         gap: '1rem',
         fontFamily: 'sans-serif'
       }}>
         <div style={{
           width: '50px',
           height: '50px',
-          border: '3px solid rgba(20, 184, 166, 0.1)',
-          borderTopColor: '#14b8a6',
+          border: '3px solid rgba(30, 58, 138, 0.1)',
+          borderTopColor: '#1e3a8a',
           borderRadius: '50%',
           animation: 'spin 1s linear infinite'
         }} />
-        <p style={{ fontSize: '0.9rem', color: '#9ca3af', letterSpacing: '0.05em' }}>
+        <p style={{ fontSize: '0.9rem', color: '#4b5563', letterSpacing: '0.05em' }}>
           INITIALIZING SECURE SESSION...
         </p>
         <style>{`
@@ -63,72 +88,66 @@ export default function AppLayoutClient({ children }: { children: React.ReactNod
   };
 
   const showAuditLogs = user.role === 'ADMIN' || user.role === 'MONITOR';
+  const showSafetyAlerts = user.role === 'ADMIN' || user.role === 'MONITOR';
 
   return (
     <div className="app-container">
-      {/* Sidebar Navigation */}
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-logo">Rx</div>
-          <span className="brand-name">ClinEDC</span>
+      {/* Horizontal Header Navigation (LibreClinica style) */}
+      <header className="header-bar">
+        <div className="header-brand">
+          <div className="header-logo">Rx</div>
+          <span className="header-title">ClinEDC Portal</span>
         </div>
 
-        <nav style={{ flex: 1 }}>
-          <ul className="nav-list">
-            <li>
-              <Link href="/" className={`nav-link ${isLinkActive('/') ? 'active' : ''}`}>
-                <LayoutDashboard />
-                Dashboard
-              </Link>
-            </li>
-            <li>
-              <Link href="/patients" className={`nav-link ${isLinkActive('/patients') ? 'active' : ''}`}>
-                <Users />
-                Patients
-              </Link>
-            </li>
-            {showAuditLogs && (
-              <li>
-                <Link href="/audit" className={`nav-link ${isLinkActive('/audit') ? 'active' : ''}`}>
-                  <History />
-                  Audit Trail
-                </Link>
-              </li>
-            )}
-          </ul>
+        <nav className="header-nav">
+          <Link href="/" className={`header-link ${isLinkActive('/') ? 'active' : ''}`}>
+            <LayoutDashboard />
+            Dashboard
+          </Link>
+          <Link href="/patients" className={`header-link ${isLinkActive('/patients') ? 'active' : ''}`}>
+            <Users />
+            Registry Matrix
+          </Link>
+          {showSafetyAlerts && (
+            <Link href="/safety" className={`header-link ${isLinkActive('/safety') ? 'active' : ''}`}>
+              <AlertTriangle />
+              Safety Alerts
+            </Link>
+          )}
+          {showAuditLogs && (
+            <Link href="/audit" className={`header-link ${isLinkActive('/audit') ? 'active' : ''}`}>
+              <History />
+              Audit Trail
+            </Link>
+          )}
         </nav>
 
-        {/* User profile section at the bottom of the sidebar */}
-        <div style={{
-          borderTop: '1px solid var(--border-color)',
-          paddingTop: '1.5rem',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '1rem'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <UserCircle style={{ width: '36px', height: '36px', color: 'var(--color-primary)' }} />
-            <div style={{ overflow: 'hidden' }}>
-              <p style={{ fontSize: '0.9rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {user.name}
-              </p>
-              <span className={`badge ${
-                user.role === 'ADMIN' ? 'badge-completed' :
-                user.role === 'MONITOR' ? 'badge-frozen' :
-                user.role === 'DATA_ENTRY' ? 'badge-enrolled' :
-                'badge-screening'
-              }`} style={{ fontSize: '0.65rem', padding: '0.1rem 0.5rem', marginTop: '0.25rem' }}>
-                {user.role}
-              </span>
-            </div>
+        {/* User Details & Sign Out */}
+        <div className="header-user-actions">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#bfdbfe' }}>
+            <UserCircle style={{ width: '22px', height: '22px' }} />
+            <span>
+              <strong>{user.name}</strong> ({user.role})
+            </span>
           </div>
 
-          <button onClick={logout} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}>
-            <LogOut style={{ width: '16px' }} />
+          <button 
+            onClick={logout} 
+            className="btn btn-secondary" 
+            style={{ 
+              padding: '0.35rem 0.75rem', 
+              fontSize: '0.75rem', 
+              color: '#1e3a8a', 
+              background: '#ffffff', 
+              border: '1px solid #ffffff',
+              borderRadius: 'var(--radius-sm)'
+            }}
+          >
+            <LogOut style={{ width: '12px' }} />
             Sign Out
           </button>
         </div>
-      </aside>
+      </header>
 
       {/* Main Panel */}
       <main className="main-content">
@@ -136,24 +155,81 @@ export default function AppLayoutClient({ children }: { children: React.ReactNod
         <div className="user-banner">
           <div className="user-banner-details">
             <div>
-              <span className="user-banner-label">Study Site</span>
-              <p style={{ fontSize: '0.9rem', fontWeight: 600 }}>
-                {user.site_id === 1 ? 'Berlin Charité Medical Center (Site 1)' :
-                 user.site_id === 2 ? 'New York Presbyterian Hospital (Site 2)' :
-                 'Global Study Control'}
-              </p>
+              <span className="user-banner-label">Clinical Study Site</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.15rem' }}>
+                <span style={{
+                  background: '#f8fafc',
+                  color: '#0f172a',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '4px',
+                  padding: '0.25rem 0.5rem',
+                  fontSize: '0.85rem',
+                  fontWeight: 600
+                }}>
+                  {sites.find(s => s.id === user.site_id)?.name || (user.site_id ? `Site #${user.site_id}` : 'Global Study Control Center')}
+                </span>
+              </div>
             </div>
-            <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--border-color)' }} />
+            <div className="user-banner-divider" style={{ width: '1px', height: '24px', backgroundColor: 'var(--border-color)' }} />
             <div>
               <span className="user-banner-label">FDA Compliance Status</span>
               <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                 <ShieldCheck style={{ width: '16px', height: '16px' }} />
-                21 CFR Part 11 Audit Active
+                21 CFR Part 11 Active Logging
               </p>
             </div>
           </div>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div className="user-banner-actions">
+            {/* Queue Sync button */}
+            {isOffline && syncQueue.length > 0 && (
+              <button 
+                onClick={syncOfflineData} 
+                className="btn btn-primary"
+                style={{ 
+                  padding: '0.35rem 0.75rem', 
+                  fontSize: '0.7rem', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.25rem', 
+                  color: '#ffffff',
+                  borderRadius: 'var(--radius-sm)'
+                }}
+              >
+                <RefreshCw style={{ width: '12px' }} />
+                Sync Edge Queue ({syncQueue.length})
+              </button>
+            )}
+
+            {/* Connectivity Toggle */}
+            <button
+              onClick={() => toggleOffline(!isOffline)}
+              className="btn"
+              style={{
+                padding: '0.35rem 0.75rem',
+                fontSize: '0.7rem',
+                background: isOffline ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.08)',
+                border: isOffline ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+                color: isOffline ? 'var(--color-error)' : 'var(--color-success)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                borderRadius: 'var(--radius-sm)'
+              }}
+            >
+              {isOffline ? (
+                <>
+                  <WifiOff style={{ width: '14px' }} />
+                  Offline Mode
+                </>
+              ) : (
+                <>
+                  <Wifi style={{ width: '14px' }} />
+                  Edge Online
+                </>
+              )}
+            </button>
+
             <span className="badge badge-screening" style={{ textTransform: 'none', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.7rem' }}>
               <Database style={{ width: '12px' }} />
               {useMockIam ? 'Local Mock IAM' : 'Keycloak OIDC Integration'}

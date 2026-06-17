@@ -6,6 +6,13 @@ import sitesRouter from './routes/sites';
 import patientsRouter from './routes/patients';
 import formsRouter from './routes/forms';
 import auditRouter from './routes/audit';
+import queriesRouter from './routes/queries';
+import imagingRouter from './routes/imaging';
+import fhirRouter from './routes/fhir';
+import edgeRouter from './routes/edge';
+import authRouter from './routes/auth';
+import { eventBroker } from './eventBroker';
+import pool from './db/db';
 
 import path from 'path';
 
@@ -16,7 +23,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const app = express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 5001;
 
 // Enable CORS
 app.use(cors({
@@ -38,6 +45,30 @@ app.use('/api/sites', sitesRouter);
 app.use('/api/patients', patientsRouter);
 app.use('/api/forms', formsRouter);
 app.use('/api/audit', auditRouter);
+app.use('/api/queries', queriesRouter);
+app.use('/api/imaging', imagingRouter);
+app.use('/api/fhir', fhirRouter);
+app.use('/api/edge', edgeRouter);
+app.use('/api/auth', authRouter);
+
+// Real-Time Safety Alert consumer simulation
+eventBroker.on('severe_adverse_event', async ({ form }) => {
+  console.log(`[EVENT BROKER] Consumer received severe adverse event alert for patient PT-${form.patient_id}`);
+  
+  const alertMessage = `CRITICAL SAFETY ALERT: Severe adverse event logged: "${form.data.event_name}". Action required immediately.`;
+  const sentTo = 'safety-monitor@sponsor.com';
+
+  try {
+    await pool.query(
+      `INSERT INTO safety_alerts (form_id, severity, alert_message, sent_to, status) 
+       VALUES ($1, $2, $3, $4, 'DISPATCHED')`,
+      [form.id, 'Severe', alertMessage, sentTo]
+    );
+    console.log('[EVENT BROKER] Automated notification dispatched to safety monitoring team.');
+  } catch (err) {
+    console.error('[EVENT BROKER] Failed to write safety alert', err);
+  }
+});
 
 // Database initialization & Server boot
 const startServer = async () => {

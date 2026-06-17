@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import pool from '../db/db';
 import { authenticateToken, requireRoles, AuthenticatedRequest } from '../middleware/auth';
 import { logAudit } from '../middleware/audit';
+import { eventBroker } from '../eventBroker';
 
 const router = Router();
 
@@ -45,10 +46,15 @@ router.get('/patient/:patientId', authenticateToken, async (req: AuthenticatedRe
 router.post('/patient/:patientId', authenticateToken, requireRoles(['DATA_ENTRY', 'ADMIN']), async (req: AuthenticatedRequest, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
   const patientId = parseInt(req.params.patientId, 10);
-  const { form_type, data } = req.body;
+  const { form_type, event_name, data } = req.body;
 
   if (!form_type || !data) {
     return res.status(400).json({ error: 'Form type and data are required' });
+  }
+
+  const eventName = event_name || (form_type === 'ADVERSE_EVENTS' ? 'Adverse Event' : 'Screening');
+  if (!['Screening', 'Baseline', 'Week 4', 'Week 12', 'Adverse Event'].includes(eventName)) {
+    return res.status(400).json({ error: 'Invalid event name' });
   }
 
   try {
@@ -70,9 +76,9 @@ router.post('/patient/:patientId', authenticateToken, requireRoles(['DATA_ENTRY'
     }
 
     const result = await pool.query(
-      `INSERT INTO clinical_forms (patient_id, form_type, entered_by_id, data) 
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [patientId, form_type, req.user.id, JSON.stringify(data)]
+      `INSERT INTO clinical_forms (patient_id, event_name, form_type, entered_by_id, data) 
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [patientId, eventName, form_type, req.user.id, JSON.stringify(data)]
     );
     const newForm = result.rows[0];
 
@@ -89,6 +95,15 @@ router.post('/patient/:patientId', authenticateToken, requireRoles(['DATA_ENTRY'
       },
       req
     );
+
+    // Emit real-time safety pipeline event if Severe adverse event
+    if (form_type === 'ADVERSE_EVENTS' && data.severity === 'Severe') {
+      try {
+        eventBroker.emit('severe_adverse_event', { form: newForm, user: req.user });
+      } catch (e) {
+        console.error('Failed to emit severe_adverse_event', e);
+      }
+    }
 
     res.status(201).json(newForm);
   } catch (err) {
