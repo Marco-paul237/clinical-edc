@@ -1051,7 +1051,7 @@ export default function PatientDetailPage({
                 </p>
                 
                 {/* Consent Signing Box (CRC or Patient only) */}
-                {(user?.role === 'PATIENT' || user?.role === 'DATA_ENTRY' || user?.role === 'ADMIN') && (
+                {(user?.role === 'DATA_ENTRY' || user?.role === 'ADMIN') && (
                   <form onSubmit={handleSignConsent} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     <div style={{
                       background: 'rgba(0,0,0,0.3)',

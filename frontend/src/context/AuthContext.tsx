@@ -7,7 +7,7 @@ export interface UserProfile {
   id: string;
   email: string;
   name: string;
-  role: 'ADMIN' | 'MONITOR' | 'DATA_ENTRY' | 'PATIENT';
+  role: 'ADMIN' | 'MONITOR' | 'DATA_ENTRY';
   site_id?: number | null;
   patient_id?: string | null;
 }
@@ -24,23 +24,40 @@ interface AuthContextType {
   toggleOffline: (val: boolean) => void;
   syncQueue: any[];
   syncOfflineData: () => Promise<void>;
-  switchContext: (newRole: 'ADMIN' | 'MONITOR' | 'DATA_ENTRY' | 'PATIENT', newSiteId: number | null) => void;
+  switchContext: (newRole: 'ADMIN' | 'MONITOR' | 'DATA_ENTRY', newSiteId: number | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const mockProfiles: Record<string, UserProfile> = {
-  'mock-admin': { id: 'mock-admin', email: 'admin@trial.com', name: 'System Admin', role: 'ADMIN', site_id: null },
-  'mock-crc-1': { id: 'mock-crc-1', email: 'crc1@site1.org', name: 'John CRC Site 1', role: 'DATA_ENTRY', site_id: 1 },
-  'mock-crc-2': { id: 'mock-crc-2', email: 'crc2@site2.org', name: 'Jane CRC Site 2', role: 'DATA_ENTRY', site_id: 2 },
-  'mock-cra': { id: 'mock-cra', email: 'cra@sponsor.com', name: 'Alice CRA Monitor', role: 'MONITOR', site_id: null },
-  'mock-patient-1': { id: 'mock-patient-1', email: 'patient1@home.com', name: 'Robert Patient 1', role: 'PATIENT', site_id: 1, patient_id: '1' }
+const decodeJwt = (token: string) => {
+  try {
+    const base64Url = token.split('.')[1];
+    if (!base64Url) return null;
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      window.atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    console.error('Failed to decode JWT:', e);
+    return null;
+  }
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hash = window.location.hash.substring(1);
+      const params = new URLSearchParams(hash);
+      return !!(params.get('access_token') || params.get('error'));
+    }
+    return false;
+  });
   const [isOffline, setIsOffline] = useState(false);
   const [syncQueue, setSyncQueue] = useState<any[]>([]);
   const router = useRouter();
@@ -49,7 +66,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
   useEffect(() => {
+    // Fail-safe fallback timeout: never let the screen hang on the loading spinner for more than 2.5 seconds
+    const fallbackTimer = setTimeout(() => {
+      console.warn('[AUTH] Session initialization took too long. Forcing loader dismissal.');
+      setIsLoading(false);
+    }, 2500);
+
     try {
+      // 1. Process OIDC redirect callback hashes first
+      if (typeof window !== 'undefined' && window.location.hash) {
+        const hash = window.location.hash.substring(1);
+        const params = new URLSearchParams(hash);
+        const accessToken = params.get('access_token');
+        const error = params.get('error');
+        const errorDesc = params.get('error_description');
+
+        if (error) {
+          console.error('OIDC Login Error:', error, errorDesc);
+          alert(`OIDC Authentication Error: ${errorDesc || error}`);
+          // Clear hash from URL
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        } else if (accessToken) {
+          // Clear hash from URL
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          
+          const decoded = decodeJwt(accessToken);
+          if (decoded) {
+            const roles = decoded.realm_access?.roles || [];
+            let mappedRole: 'ADMIN' | 'MONITOR' | 'DATA_ENTRY' = 'DATA_ENTRY';
+            if (roles.includes('ADMIN')) mappedRole = 'ADMIN';
+            else if (roles.includes('MONITOR')) mappedRole = 'MONITOR';
+            else if (roles.includes('DATA_ENTRY')) mappedRole = 'DATA_ENTRY';
+
+            const site_id = decoded.site_id ? parseInt(decoded.site_id, 10) : null;
+            const patient_id = decoded.patient_id || null;
+
+            const profile: UserProfile = {
+              id: decoded.sub,
+              email: decoded.email || '',
+              name: decoded.name || decoded.preferred_username || 'OIDC User',
+              role: mappedRole,
+              site_id,
+              patient_id
+            };
+
+            // Save to sessionStorage/localStorage
+            sessionStorage.setItem('edc_user', JSON.stringify(profile));
+            sessionStorage.setItem('edc_token', accessToken);
+            setUser(profile);
+            setToken(accessToken);
+
+            // Redirect based on role
+            if (profile.role === 'DATA_ENTRY') {
+              router.push('/patients');
+            } else if (profile.role === 'MONITOR') {
+              router.push('/audit');
+            } else {
+              router.push('/');
+            }
+
+            clearTimeout(fallbackTimer);
+            setIsLoading(false);
+            return;
+          }
+        }
+      }
+
       // Load auth info and offline settings from localStorage/sessionStorage on startup
       const storedUser = localStorage.getItem('edc_user') || (typeof window !== 'undefined' ? sessionStorage.getItem('edc_user') : null);
       const storedToken = localStorage.getItem('edc_token') || (typeof window !== 'undefined' ? sessionStorage.getItem('edc_token') : null);
@@ -77,9 +159,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.error('Failed to initialize session:', err);
     } finally {
+      clearTimeout(fallbackTimer);
       setIsLoading(false);
     }
+
+    return () => clearTimeout(fallbackTimer);
   }, []);
+
 
   const login = (profile: UserProfile, customToken?: string, rememberMe?: boolean) => {
     let generatedToken = customToken || '';
@@ -117,7 +203,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(generatedToken);
 
     // Redirect directly to the tab based on the role chosen
-    if (profile.role === 'DATA_ENTRY' || profile.role === 'PATIENT') {
+    if (profile.role === 'DATA_ENTRY') {
       router.push('/patients');
     } else if (profile.role === 'MONITOR') {
       router.push('/audit');
@@ -292,7 +378,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || `HTTP error! status: ${res.status}`);
+      const errorMsg = errData.error || `HTTP error! status: ${res.status}`;
+      if (res.status === 401 || res.status === 403 || errorMsg.toLowerCase().includes('token') || errorMsg.toLowerCase().includes('expired')) {
+        console.warn('[AUTH] Session unauthorized or expired. Automatically logging out.');
+        logout();
+      }
+      throw new Error(errorMsg);
     }
 
     const data = await res.json();
@@ -305,7 +396,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return data;
   };
 
-  const switchContext = (newRole: 'ADMIN' | 'MONITOR' | 'DATA_ENTRY' | 'PATIENT', newSiteId: number | null) => {
+  const switchContext = (newRole: 'ADMIN' | 'MONITOR' | 'DATA_ENTRY', newSiteId: number | null) => {
     if (!user) return;
     
     const updatedProfile: UserProfile = {
@@ -339,7 +430,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(generatedToken);
 
     // Redirect to the appropriate tab based on the new role chosen
-    if (newRole === 'DATA_ENTRY' || newRole === 'PATIENT') {
+    if (newRole === 'DATA_ENTRY') {
       router.push('/patients');
     } else if (newRole === 'MONITOR') {
       router.push('/audit');

@@ -7,11 +7,13 @@ import { ShieldAlert, Key, User, Activity, Lock, Mail, Users, Sparkles, Building
 export interface Site {
   id: number;
   name: string;
+  town?: string;
+  country?: string;
   location: string;
 }
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { user, login, logout } = useAuth();
 
   // Tab Selection State (Removed Mock Profiles tab)
   const [activeTab, setActiveTab] = useState<'credentials' | 'oidc'>('credentials');
@@ -28,7 +30,7 @@ export default function LoginPage() {
   const [signupUsername, setSignupUsername] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
-  const [signupRole, setSignupRole] = useState<'ADMIN' | 'MONITOR' | 'DATA_ENTRY' | 'PATIENT'>('DATA_ENTRY');
+  const [signupRole, setSignupRole] = useState<'ADMIN' | 'MONITOR' | 'DATA_ENTRY'>('DATA_ENTRY');
   
   // Sites Selection State
   const [sites, setSites] = useState<Site[]>([]);
@@ -58,9 +60,25 @@ export default function LoginPage() {
     }
   };
 
+  const [isBackdoor, setIsBackdoor] = useState(false);
+
   useEffect(() => {
     loadSites();
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const isBD = params.get('backdoor') === 'true';
+      setIsBackdoor(isBD);
+      if (isBD) {
+        setAuthMode('signup');
+      }
+    }
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      logout();
+    }
+  }, [user]);
 
   const handleKeycloakLogin = () => {
     // Port 8081 is configured for Keycloak to avoid port conflicts with local Adminer services
@@ -105,23 +123,13 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const isCreateNew = selectedSiteId === 'create-new';
-      
-      if (isCreateNew && (!newSiteName || !newSiteLocation)) {
-        throw new Error('Please fill in both New Site Name and New Site Location fields.');
-      }
-
       const res = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: signupUsername,
           email: signupEmail,
-          password: signupPassword,
-          role: signupRole,
-          site_id: isCreateNew ? null : selectedSiteId,
-          new_site_name: isCreateNew ? newSiteName : null,
-          new_site_location: isCreateNew ? newSiteLocation : null
+          password: signupPassword
         }),
       });
 
@@ -305,7 +313,7 @@ export default function LoginPage() {
         {/* TAB 1: Credentials (Login & Sign Up) */}
         {activeTab === 'credentials' && (
           <div>
-            {authMode === 'login' ? (
+            {authMode === 'login' || !isBackdoor ? (
               // Login Form
               <form onSubmit={handleCredentialsLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -358,9 +366,11 @@ export default function LoginPage() {
                   {loading ? 'Signing In...' : 'Sign In'}
                 </button>
 
-                <p style={{ textAlign: 'center', fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.5rem' }}>
-                  Don't have an account? <span onClick={() => setAuthMode('signup')} className="mode-link">Sign Up</span>
-                </p>
+                {isBackdoor && (
+                  <p style={{ textAlign: 'center', fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.5rem' }}>
+                    Don't have an account? <span onClick={() => setAuthMode('signup')} className="mode-link">Sign Up</span>
+                  </p>
+                )}
               </form>
             ) : (
               // Sign Up Form
@@ -416,77 +426,18 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 500 }} htmlFor="signup-role">Choose Clinical Role</label>
-                  <div style={{ position: 'relative', marginTop: '0.25rem' }}>
-                    <Users style={{ position: 'absolute', left: '10px', top: '10px', width: '16px', color: '#94a3b8' }} />
-                    <select 
-                      id="signup-role"
-                      required
-                      className="field-input" 
-                      style={{ paddingLeft: '2.25rem', background: '#0f172a' }}
-                      value={signupRole}
-                      onChange={(e: any) => setSignupRole(e.target.value)}
-                    >
-                      <option value="DATA_ENTRY">Clinical Site Investigator / CRC (DATA_ENTRY)</option>
-                      <option value="MONITOR">CRA Data Monitor (MONITOR)</option>
-                      <option value="ADMIN">System Administrator (ADMIN)</option>
-                      <option value="PATIENT">Clinical Trial Patient (PATIENT)</option>
-                    </select>
-                  </div>
+                {/* Notice that this registers an ADMIN */}
+                <div style={{
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.2)',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1rem',
+                  fontSize: '0.8rem',
+                  color: '#38bdf8',
+                  lineHeight: '1.4'
+                }}>
+                  ℹ️ **Administrative Backdoor**: Registering here will automatically create a System Administrator account with global study access privileges.
                 </div>
-
-                {/* Site Selection / Creation Container */}
-                <div style={{ display: 'flex', flexDirection: 'column', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '1rem', marginTop: '0.25rem' }}>
-                  <label style={{ fontSize: '0.8rem', color: '#38bdf8', fontWeight: 600 }} htmlFor="signup-site">Clinical Study Location / Site</label>
-                  <div style={{ position: 'relative', marginTop: '0.25rem' }}>
-                    <Building2 style={{ position: 'absolute', left: '10px', top: '10px', width: '16px', color: '#94a3b8' }} />
-                    <select 
-                      id="signup-site"
-                      required
-                      className="field-input" 
-                      style={{ paddingLeft: '2.25rem', background: '#0f172a' }}
-                      value={selectedSiteId}
-                      onChange={(e) => setSelectedSiteId(e.target.value)}
-                    >
-                      {sites.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name} ({s.location})</option>
-                      ))}
-                      <option value="create-new">+ Create a new site...</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Create New Site Fields */}
-                {selectedSiteId === 'create-new' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0.75rem', background: 'rgba(56, 189, 248, 0.04)', border: '1px solid rgba(56, 189, 248, 0.15)', borderRadius: '8px', marginTop: '0.25rem' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#38bdf8' }}>New Site Specifications</span>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <label style={{ fontSize: '0.7rem', color: '#94a3b8' }} htmlFor="new-site-name">Site Name</label>
-                      <input 
-                        id="new-site-name"
-                        type="text" 
-                        placeholder="e.g. Mayo Clinic Rochester" 
-                        className="field-input"
-                        value={newSiteName}
-                        onChange={(e) => setNewSiteName(e.target.value)}
-                      />
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <label style={{ fontSize: '0.7rem', color: '#94a3b8' }} htmlFor="new-site-location">Location (City / Country)</label>
-                      <input 
-                        id="new-site-location"
-                        type="text" 
-                        placeholder="e.g. Minnesota, USA" 
-                        className="field-input"
-                        value={newSiteLocation}
-                        onChange={(e) => setNewSiteLocation(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                )}
 
                 <button type="submit" className="btn-gradient" style={{ marginTop: '0.5rem' }} disabled={loading}>
                   <Sparkles style={{ width: '16px' }} />

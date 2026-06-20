@@ -31,6 +31,23 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Admin User Management State
+  const [usersList, setUsersList] = useState<any[]>([]);
+  const [sitesList, setSitesList] = useState<any[]>([]);
+  const [newUsername, setNewUsername] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState<'ADMIN' | 'MONITOR' | 'DATA_ENTRY'>('DATA_ENTRY');
+  const [newSiteId, setNewSiteId] = useState('');
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editingRole, setEditingRole] = useState<'ADMIN' | 'MONITOR' | 'DATA_ENTRY'>('DATA_ENTRY');
+  const [editingSiteId, setEditingSiteId] = useState('');
+  const [newSiteName, setNewSiteName] = useState('');
+  const [newSiteTown, setNewSiteTown] = useState('');
+  const [newSiteCountry, setNewSiteCountry] = useState('');
+  const [newSiteStudyCase, setNewSiteStudyCase] = useState('');
+  const [newSiteFile, setNewSiteFile] = useState<File | null>(null);
+
   useEffect(() => {
     if (!user) {
       router.push('/login');
@@ -40,32 +57,21 @@ export default function DashboardPage() {
     const loadDashboardData = async () => {
       try {
         setLoading(true);
-        // Load Patients
-        const patients = await apiFetch('/api/patients');
-        // Load Sites
-        const sites = await apiFetch('/api/sites');
-        // Load Queries
-        const queries = await apiFetch('/api/queries');
+        // Load dashboard metadata in parallel to optimize load speed and reduce network roundtrips
+        const [patients, sites, queries] = await Promise.all([
+          apiFetch('/api/patients'),
+          apiFetch('/api/sites'),
+          apiFetch('/api/queries')
+        ]);
         const openQueries = queries.filter((q: any) => q.status === 'OPEN' || q.status === 'RESOLVED');
 
         // Compile counts
         const enrolled = patients.filter((p: any) => p.status === 'ENROLLED').length;
         
-        // Fetch forms for all patients in parallel to avoid sequential network roundtrip latency
-        const formsPromises = patients.map(async (p: any) => {
-          try {
-            return await apiFetch(`/api/forms/patient/${p.id}`);
-          } catch (e) {
-            return [];
-          }
-        });
-        const allFormsResults = await Promise.all(formsPromises);
-        let totalForms = 0;
-        let frozenForms = 0;
-        for (const forms of allFormsResults) {
-          totalForms += forms.length;
-          frozenForms += forms.filter((f: any) => f.is_frozen).length;
-        }
+        // Fetch all clinical forms in a single call to avoid roundtrip network latency
+        const forms = await apiFetch('/api/forms').catch(() => []);
+        const totalForms = forms.length;
+        const frozenForms = forms.filter((f: any) => f.is_frozen).length;
 
         setStats({
           patientsCount: patients.length,
@@ -82,6 +88,14 @@ export default function DashboardPage() {
         if (user.role === 'MONITOR' || user.role === 'ADMIN') {
           const audits = await apiFetch('/api/audit');
           setRecentAudits(audits.slice(0, 5)); // Keep latest 5
+        }
+
+        // Load sites and users if admin
+        if (user.role === 'ADMIN') {
+          const sitesData = await apiFetch('/api/sites');
+          setSitesList(sitesData);
+          const usersData = await apiFetch('/api/auth/users');
+          setUsersList(usersData);
         }
         
         setLoading(false);
@@ -122,6 +136,143 @@ export default function DashboardPage() {
     }
   };
 
+  const handleAddUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUsername || !newEmail || !newPassword || !newRole) {
+      alert('All fields are required.');
+      return;
+    }
+
+    try {
+      const newUser = await apiFetch('/api/auth/users', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: newUsername,
+          email: newEmail,
+          password: newPassword,
+          role: newRole,
+          site_id: newSiteId ? parseInt(newSiteId, 10) : null
+        })
+      });
+
+      alert(`User "${newUser.name}" added successfully!`);
+      setNewUsername('');
+      setNewEmail('');
+      setNewPassword('');
+      setNewRole('DATA_ENTRY');
+      setNewSiteId('');
+
+      // Refresh users
+      const updatedUsers = await apiFetch('/api/auth/users');
+      setUsersList(updatedUsers);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Failed to add user.');
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setNewSiteFile(e.target.files[0]);
+    } else {
+      setNewSiteFile(null);
+    }
+  };
+
+  const handleAddSite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSiteName || !newSiteTown || !newSiteCountry || !newSiteStudyCase || !newSiteFile) {
+      alert('Site name, town, country, study case, and protocol document are required.');
+      return;
+    }
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64Data = reader.result as string;
+        try {
+          const newSite = await apiFetch('/api/sites', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: newSiteName,
+              town: newSiteTown,
+              country: newSiteCountry,
+              study_case: newSiteStudyCase,
+              study_case_filename: newSiteFile.name,
+              study_case_file_data: base64Data
+            })
+          });
+
+          alert(`Site "${newSite.name}" created successfully!`);
+          setNewSiteName('');
+          setNewSiteTown('');
+          setNewSiteCountry('');
+          setNewSiteStudyCase('');
+          setNewSiteFile(null);
+
+          // Clear file input manually
+          const fileInput = document.getElementById('site-file-input') as HTMLInputElement;
+          if (fileInput) fileInput.value = '';
+
+          // Refresh sites list
+          const updatedSites = await apiFetch('/api/sites');
+          setSitesList(updatedSites);
+        } catch (err: any) {
+          console.error(err);
+          alert(err.message || 'Failed to create site.');
+        }
+      };
+      reader.onerror = () => {
+        alert('Failed to read the file.');
+      };
+      reader.readAsDataURL(newSiteFile);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Failed to process file.');
+    }
+  };
+
+  const handleUpdateUserRole = async (userId: string) => {
+    try {
+      const updatedUser = await apiFetch(`/api/auth/users/${userId}/role`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          role: editingRole,
+          site_id: editingSiteId ? parseInt(editingSiteId, 10) : null
+        })
+      });
+
+      alert(`User "${updatedUser.name}" updated successfully!`);
+      setEditingUserId(null);
+
+      // Refresh users
+      const updatedUsers = await apiFetch('/api/auth/users');
+      setUsersList(updatedUsers);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Failed to update user role.');
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Are you sure you want to delete this user?')) return;
+
+    try {
+      await apiFetch(`/api/auth/users/${userId}`, {
+        method: 'DELETE'
+      });
+
+      alert('User deleted successfully.');
+
+      // Refresh users
+      const updatedUsers = await apiFetch('/api/auth/users');
+      setUsersList(updatedUsers);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Failed to delete user.');
+    }
+  };
+
   if (loading) {
     return <div style={{ color: 'var(--color-text-muted)', padding: '2rem' }}>Loading dashboard metrics...</div>;
   }
@@ -140,22 +291,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (user?.role === 'PATIENT') {
-    return (
-      <div>
-        <h1 className="page-title" style={{ marginBottom: '1.5rem' }}>Patient Portal Dashboard</h1>
-        <div className="card" style={{ padding: '2rem' }}>
-          <h2 style={{ marginBottom: '1rem', color: 'var(--color-primary)' }}>Welcome to the Clinical Trial</h2>
-          <p style={{ marginBottom: '1.5rem' }}>
-            As a trial participant, you can view your profile details and securely sign the required Informed Consent document digitally to participate.
-          </p>
-          <button onClick={() => router.push(`/patients`)} className="btn btn-primary">
-            Go to My Patient Profile
-          </button>
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <div>
@@ -365,6 +501,353 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Admin User Management Section */}
+      {user?.role === 'ADMIN' && (
+        <div className="card" style={{ marginTop: '2rem' }}>
+          <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-primary)', fontFamily: 'var(--font-heading)' }}>
+            <Users style={{ width: '22px' }} />
+            User Management & Role Attribution
+          </h3>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
+            {/* Left Column: Add New User Form */}
+            <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '2rem' }}>
+              <h4 style={{ marginBottom: '1rem', fontWeight: 600 }}>Create New User Account</h4>
+              <form onSubmit={handleAddUser} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Username</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="john_crc"
+                    className="form-input"
+                    value={newUsername}
+                    onChange={(e) => setNewUsername(e.target.value)}
+                    style={{ fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="john@hospital.org"
+                    className="form-input"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    style={{ fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Password</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    className="form-input"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    style={{ fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Role</label>
+                    <select
+                      className="form-input"
+                      value={newRole}
+                      onChange={(e: any) => setNewRole(e.target.value)}
+                      style={{ fontSize: '0.85rem', background: '#0a0d1a', color: '#fff' }}
+                    >
+                      <option value="DATA_ENTRY">Investigator / CRC</option>
+                      <option value="MONITOR">Monitor / CRA</option>
+                      <option value="ADMIN">System Admin</option>
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Clinical Site</label>
+                    <select
+                      className="form-input"
+                      value={newSiteId}
+                      onChange={(e) => setNewSiteId(e.target.value)}
+                      style={{ fontSize: '0.85rem', background: '#0a0d1a', color: '#fff' }}
+                    >
+                      <option value="">Global/None</option>
+                      {sitesList.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem', justifyContent: 'center' }}>
+                  Create User
+                </button>
+              </form>
+
+              <hr style={{ margin: '1.5rem 0', borderColor: 'var(--border-color)', opacity: 0.5 }} />
+
+              <h4 style={{ marginBottom: '1rem', fontWeight: 600 }}>Create New Clinical Site</h4>
+              <form onSubmit={handleAddSite} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Site Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Paris Saint-Louis Hospital"
+                    className="form-input"
+                    value={newSiteName}
+                    onChange={(e) => setNewSiteName(e.target.value)}
+                    style={{ fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Town (City)</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Paris"
+                      className="form-input"
+                      value={newSiteTown}
+                      onChange={(e) => setNewSiteTown(e.target.value)}
+                      style={{ fontSize: '0.85rem' }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Country</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="France"
+                      className="form-input"
+                      value={newSiteCountry}
+                      onChange={(e) => setNewSiteCountry(e.target.value)}
+                      style={{ fontSize: '0.85rem' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Study Case (e.g. cancer, pneumonia)</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Cancer Study"
+                    className="form-input"
+                    value={newSiteStudyCase}
+                    onChange={(e) => setNewSiteStudyCase(e.target.value)}
+                    style={{ fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Protocol Document (PDF, Doc, txt)</label>
+                  <input
+                    id="site-file-input"
+                    type="file"
+                    required
+                    accept=".pdf,.doc,.docx,.txt,.csv"
+                    className="form-input"
+                    onChange={handleFileChange}
+                    style={{ fontSize: '0.85rem', padding: '0.35rem 0.75rem' }}
+                  />
+                </div>
+
+                <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem', justifyContent: 'center' }}>
+                  Create Site
+                </button>
+              </form>
+
+              <hr style={{ margin: '1.5rem 0', borderColor: 'var(--border-color)', opacity: 0.5 }} />
+
+              <h4 style={{ marginBottom: '1rem', fontWeight: 600 }}>Created Clinical Sites</h4>
+              <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.825rem' }}>
+                  <thead>
+                    <tr style={{ background: 'rgba(0,0,0,0.05)', borderBottom: '1px solid var(--border-color)' }}>
+                      <th style={{ padding: '0.5rem 0.75rem' }}>Site</th>
+                      <th style={{ padding: '0.5rem 0.75rem' }}>Study Case</th>
+                      <th style={{ padding: '0.5rem 0.75rem' }}>Protocol</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sitesList.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} style={{ padding: '0.75rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                          No sites created.
+                        </td>
+                      </tr>
+                    ) : (
+                      sitesList.map((s) => (
+                        <tr key={s.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          <td style={{ padding: '0.5rem 0.75rem' }}>
+                            <div style={{ fontWeight: 600 }}>{s.name}</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>{s.location}</div>
+                          </td>
+                          <td style={{ padding: '0.5rem 0.75rem' }}>
+                            <span className="badge badge-enrolled" style={{ fontSize: '0.65rem' }}>
+                              {s.study_case}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.5rem 0.75rem' }}>
+                            {s.study_case_file_url ? (
+                              <a 
+                                href={s.study_case_file_url} 
+                                target="_blank" 
+                                rel="noreferrer"
+                                style={{ color: '#38bdf8', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+                              >
+                                View File <ExternalLink style={{ width: '12px', height: '12px' }} />
+                              </a>
+                            ) : (
+                              <span style={{ color: 'var(--color-text-muted)' }}>None</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Right Column: User Accounts List & Action Panel */}
+            <div>
+              <h4 style={{ marginBottom: '1rem', fontWeight: 600 }}>Registered EDC User Accounts</h4>
+              
+              <div style={{ maxHeight: '380px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ background: 'rgba(0,0,0,0.05)', borderBottom: '1px solid var(--border-color)' }}>
+                      <th style={{ padding: '0.75rem' }}>User Info</th>
+                      <th style={{ padding: '0.75rem' }}>Assigned Role & Site</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usersList.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} style={{ padding: '1rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                          No users registered.
+                        </td>
+                      </tr>
+                    ) : (
+                      usersList.map((u) => {
+                        const isSelf = user?.id === u.id;
+                        const isEditing = editingUserId === u.id;
+
+                        return (
+                          <tr key={u.id} style={{ borderBottom: '1px solid var(--border-color)', background: isSelf ? 'rgba(30, 58, 138, 0.02)' : 'none' }}>
+                            <td style={{ padding: '0.75rem' }}>
+                              <div style={{ fontWeight: 600 }}>{u.name} {isSelf && '(You)'}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>@{u.id} | {u.email}</div>
+                            </td>
+                            <td style={{ padding: '0.75rem' }}>
+                              {isEditing ? (
+                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                  <select
+                                    className="form-input"
+                                    value={editingRole}
+                                    onChange={(e: any) => setEditingRole(e.target.value)}
+                                    style={{ fontSize: '0.75rem', padding: '0.2rem', background: '#0a0d1a', color: '#fff' }}
+                                  >
+                                    <option value="DATA_ENTRY">Investigator</option>
+                                    <option value="MONITOR">Monitor</option>
+                                    <option value="ADMIN">Admin</option>
+                                  </select>
+
+                                  <select
+                                    className="form-input"
+                                    value={editingSiteId}
+                                    onChange={(e) => setEditingSiteId(e.target.value)}
+                                    style={{ fontSize: '0.75rem', padding: '0.2rem', background: '#0a0d1a', color: '#fff' }}
+                                  >
+                                    <option value="">None/Global</option>
+                                    {sitesList.map((s) => (
+                                      <option key={s.id} value={s.id}>{s.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              ) : (
+                                <div>
+                                  <span className={`badge ${
+                                    u.role === 'ADMIN' ? 'badge-completed' :
+                                    u.role === 'MONITOR' ? 'badge-enrolled' :
+                                    u.role === 'DATA_ENTRY' ? 'badge-in-progress' :
+                                    'badge-screening'
+                                  }`} style={{ fontSize: '0.65rem' }}>
+                                    {u.role}
+                                  </span>
+                                  {u.site_id && (
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.2rem' }}>
+                                      Site: {sitesList.find(s => s.id === u.site_id)?.name || `Site #${u.site_id}`}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ padding: '0.75rem', textAlign: 'right' }}>
+                              {isEditing ? (
+                                <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }}>
+                                  <button
+                                    onClick={() => handleUpdateUserRole(u.id)}
+                                    className="btn btn-primary"
+                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingUserId(null)}
+                                    className="btn btn-secondary"
+                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }}>
+                                  <button
+                                    onClick={() => {
+                                      setEditingUserId(u.id);
+                                      setEditingRole(u.role);
+                                      setEditingSiteId(u.site_id ? String(u.site_id) : '');
+                                    }}
+                                    className="btn btn-secondary"
+                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}
+                                  >
+                                    Edit
+                                  </button>
+                                  {!isSelf && (
+                                    <button
+                                      onClick={() => handleDeleteUser(u.id)}
+                                      className="btn btn-secondary"
+                                      style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', color: 'var(--color-error)' }}
+                                    >
+                                      Delete
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

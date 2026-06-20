@@ -1,18 +1,24 @@
 -- Create schema for EDC clinical trials portal
 
-DROP TABLE IF EXISTS safety_alerts CASCADE;
-DROP TABLE IF EXISTS imaging_scans CASCADE;
-DROP TABLE IF EXISTS audit_logs CASCADE;
-DROP TABLE IF EXISTS queries CASCADE;
-DROP TABLE IF EXISTS clinical_forms CASCADE;
-DROP TABLE IF EXISTS patients CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
-DROP TABLE IF EXISTS sites CASCADE;
+-- Run migrations for existing installations to add new fields & constraints
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS study_case VARCHAR(255) NOT NULL DEFAULT 'General Study';
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS study_case_filename VARCHAR(255);
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS study_case_file_url TEXT;
+
+-- Remove PATIENT role constraint and update it for existing installations
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+DELETE FROM users WHERE role = 'PATIENT' OR id LIKE 'mock-%';
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('ADMIN', 'MONITOR', 'DATA_ENTRY'));
 
 CREATE TABLE IF NOT EXISTS sites (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
-  location VARCHAR(255) NOT NULL,
+  town VARCHAR(255),
+  country VARCHAR(255),
+  location VARCHAR(255),
+  study_case VARCHAR(255) NOT NULL DEFAULT 'General Study',
+  study_case_filename VARCHAR(255),
+  study_case_file_url TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -20,7 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
   id VARCHAR(255) PRIMARY KEY, -- IAM unique user ID (Keycloak UUID or Mock ID)
   email VARCHAR(255) NOT NULL,
   name VARCHAR(255) NOT NULL,
-  role VARCHAR(50) NOT NULL CHECK (role IN ('ADMIN', 'MONITOR', 'DATA_ENTRY', 'PATIENT')),
+  role VARCHAR(50) NOT NULL CHECK (role IN ('ADMIN', 'MONITOR', 'DATA_ENTRY')),
   site_id INT REFERENCES sites(id),
   password VARCHAR(255) DEFAULT 'password',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -110,19 +116,15 @@ CREATE TABLE IF NOT EXISTS safety_alerts (
 );
 
 -- Seed study sites
-INSERT INTO sites (id, name, location) VALUES 
-(1, 'Berlin Charité Medical Center', 'Germany')
+INSERT INTO sites (id, name, town, country, location) VALUES 
+(1, 'Berlin Charité Medical Center', 'Berlin', 'Germany', 'Berlin, Germany')
 ON CONFLICT DO NOTHING;
 
-INSERT INTO sites (id, name, location) VALUES 
-(2, 'New York Presbyterian Hospital', 'USA')
+INSERT INTO sites (id, name, town, country, location) VALUES 
+(2, 'New York Presbyterian Hospital', 'New York', 'USA', 'New York, USA')
 ON CONFLICT DO NOTHING;
 
--- Seed mock users to correspond to the mock auth developer mode
-INSERT INTO users (id, email, name, role, site_id, password) VALUES
-('mock-admin', 'admin@trial.com', 'System Admin', 'ADMIN', NULL, 'password'),
-('mock-crc-1', 'crc1@site1.org', 'John CRC Site 1', 'DATA_ENTRY', 1, 'password'),
-('mock-crc-2', 'crc2@site2.org', 'Jane CRC Site 2', 'DATA_ENTRY', 2, 'password'),
-('mock-cra', 'cra@sponsor.com', 'Alice CRA Monitor', 'MONITOR', NULL, 'password'),
-('mock-patient-1', 'patient1@home.com', 'Robert Patient 1', 'PATIENT', 1, 'password')
-ON CONFLICT DO NOTHING;
+-- Removed mock user seeds for production clean database
+
+-- Reset sequence to prevent primary key duplicates after seed inserts
+SELECT setval(pg_get_serial_sequence('sites', 'id'), COALESCE(MAX(id), 1)) FROM sites;

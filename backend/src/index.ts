@@ -1,6 +1,14 @@
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load environment variables from CWD, backend directory, or parent workspace root
+dotenv.config();
+dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import { initDb } from './db/db';
 import sitesRouter from './routes/sites';
 import patientsRouter from './routes/patients';
@@ -14,14 +22,6 @@ import authRouter from './routes/auth';
 import { eventBroker } from './eventBroker';
 import pool from './db/db';
 
-import path from 'path';
-
-// Load environment variables from CWD, backend directory, or parent workspace root
-dotenv.config();
-dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-
 const app = express();
 const port = process.env.PORT || 5001;
 
@@ -32,8 +32,12 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// Parse JSON request bodies
-app.use(express.json());
+// Parse JSON request bodies (with increased limit for file uploads)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Serve static uploads
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // API Health Check
 app.get('/api/health', (req, res) => {
@@ -86,4 +90,4 @@ const startServer = async () => {
   }
 };
 
-startServer();
+startServer(); // Force nodemon restart to run updated schema.sql containing sequence resets.

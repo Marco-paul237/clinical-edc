@@ -124,6 +124,7 @@
       "clientId": "edc-frontend",
       "enabled": true,
       "publicClient": true,
+      "implicitFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "rootUrl": "http://localhost:3000",
       "baseUrl": "/",

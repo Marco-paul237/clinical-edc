@@ -6,17 +6,19 @@ const pool = new Pool({
 
 async function run() {
   try {
+    console.log('Testing insert into sites...');
+    const insertRes = await pool.query(
+      'INSERT INTO sites (name, town, country, location) VALUES ($1, $2, $3, $4) RETURNING *',
+      ['Test Clinic', 'Test Town', 'Test Country', 'Test Town, Test Country']
+    );
+    console.log('Insert result:', insertRes.rows);
+
     console.log('Querying sites...');
     const sitesRes = await pool.query('SELECT * FROM sites');
     console.log('Sites:', sitesRes.rows);
 
-    console.log('Querying patients...');
-    const patientsRes = await pool.query('SELECT * FROM patients');
-    console.log('Patients:', patientsRes.rows);
-
-    console.log('Querying users...');
-    const usersRes = await pool.query('SELECT id, email, role, site_id FROM users');
-    console.log('Users:', usersRes.rows);
+    // Clean up
+    await pool.query('DELETE FROM sites WHERE name = $1', ['Test Clinic']);
   } catch (err) {
     console.error('Database query error:', err);
   } finally {

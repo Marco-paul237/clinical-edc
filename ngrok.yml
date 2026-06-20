@@ -1,8 +1,0 @@
-version: "3"
-agent:
-  authtoken: 3CIdsbHJKPHa51i91v9Z26b21x8_4bE6Ui9wjPLh25LWzRsrn
-tunnels:
-  frontend:
-    proto: http
-    addr: 3000
-    domain: antitrust-deed-survival.ngrok-free.dev

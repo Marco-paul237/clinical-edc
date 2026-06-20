@@ -6,6 +6,39 @@ import { eventBroker } from '../eventBroker';
 
 const router = Router();
 
+// Get all clinical forms (with RLS check based on role/site context)
+router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    let query = '';
+    let params: any[] = [];
+
+    if (req.user.role === 'ADMIN' || req.user.role === 'MONITOR') {
+      // Admins and monitors see all forms
+      query = 'SELECT f.*, u.name as entered_by_name FROM clinical_forms f LEFT JOIN users u ON f.entered_by_id = u.id ORDER BY f.id ASC';
+    } else if (req.user.role === 'DATA_ENTRY') {
+      // CRCs only see forms of patients at their site
+      query = `
+        SELECT f.*, u.name as entered_by_name FROM clinical_forms f
+        JOIN patients p ON f.patient_id = p.id
+        LEFT JOIN users u ON f.entered_by_id = u.id
+        WHERE p.site_id = $1
+        ORDER BY f.id ASC
+      `;
+      params = [req.user.site_id];
+    } else {
+      return res.status(403).json({ error: 'Forbidden: Unknown user role' });
+    }
+
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Failed to fetch clinical forms:', err);
+    res.status(500).json({ error: 'Failed to fetch clinical forms' });
+  }
+});
+
 // Get all clinical forms for a patient
 router.get('/patient/:patientId', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
@@ -25,9 +58,6 @@ router.get('/patient/:patientId', authenticateToken, async (req: AuthenticatedRe
     const patient = patientResult.rows[0];
     if (req.user.role === 'DATA_ENTRY' && req.user.site_id !== patient.site_id) {
       return res.status(403).json({ error: 'Access denied: CRC site mismatch' });
-    }
-    if (req.user.role === 'PATIENT' && req.user.patient_id !== patient.id.toString()) {
-      return res.status(403).json({ error: 'Access denied: Cannot view other patient forms' });
     }
 
     const formsResult = await pool.query(

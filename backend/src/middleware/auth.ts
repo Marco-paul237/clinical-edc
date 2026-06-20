@@ -8,7 +8,7 @@ export interface AuthenticatedRequest extends Request {
     id: string;
     email: string;
     name: string;
-    role: 'ADMIN' | 'MONITOR' | 'DATA_ENTRY' | 'PATIENT';
+    role: 'ADMIN' | 'MONITOR' | 'DATA_ENTRY';
     site_id?: number | null;
     patient_id?: string | null;
   };
@@ -59,46 +59,36 @@ export const authenticateToken = async (req: AuthenticatedRequest, res: Response
     return res.status(401).json({ error: 'Access token required' });
   }
 
-  // Support Mock IAM Mode
-  if (process.env.USE_MOCK_IAM === 'true') {
+  // Support local credentials session tokens (base64 encoded profiles)
+  if (!token.includes('.')) {
     try {
-      // For developer convenience, mock tokens can be standard base64 encoded JSON objects
       const decodedPayload = Buffer.from(token, 'base64').toString('utf-8');
-      const mockUser = JSON.parse(decodedPayload);
+      const localUser = JSON.parse(decodedPayload);
       
-      if (!mockUser.id || !mockUser.role) {
-        return res.status(403).json({ error: 'Invalid mock token structure' });
+      if (!localUser.id || !localUser.role) {
+        return res.status(403).json({ error: 'Invalid credentials token structure' });
+      }
+
+      // Check role constraints (excluding PATIENT)
+      const allowedRoles = ['ADMIN', 'MONITOR', 'DATA_ENTRY'];
+      if (!allowedRoles.includes(localUser.role)) {
+        return res.status(403).json({ error: 'Forbidden: Invalid user role' });
       }
 
       req.user = {
-        id: mockUser.id,
-        email: mockUser.email || 'mock@trial.com',
-        name: mockUser.name || 'Mock User',
-        role: mockUser.role,
-        site_id: mockUser.site_id ? parseInt(mockUser.site_id, 10) : null,
-        patient_id: mockUser.patient_id || null
+        id: localUser.id,
+        email: localUser.email,
+        name: localUser.name,
+        role: localUser.role as 'ADMIN' | 'MONITOR' | 'DATA_ENTRY',
+        site_id: localUser.site_id ? parseInt(localUser.site_id, 10) : null,
+        patient_id: null
       };
 
       // Ensure user is in our database cache
       await syncUserToDb(req.user);
       return next();
     } catch (err) {
-      // If it is not base64 JSON, try parsing as direct string identifier for ease of testing
-      const testUsers: Record<string, any> = {
-        'mock-admin': { id: 'mock-admin', email: 'admin@trial.com', name: 'System Admin', role: 'ADMIN', site_id: null },
-        'mock-crc-1': { id: 'mock-crc-1', email: 'crc1@site1.org', name: 'John CRC Site 1', role: 'DATA_ENTRY', site_id: 1 },
-        'mock-crc-2': { id: 'mock-crc-2', email: 'crc2@site2.org', name: 'Jane CRC Site 2', role: 'DATA_ENTRY', site_id: 2 },
-        'mock-cra': { id: 'mock-cra', email: 'cra@sponsor.com', name: 'Alice CRA Monitor', role: 'MONITOR', site_id: null },
-        'mock-patient-1': { id: 'mock-patient-1', email: 'patient1@home.com', name: 'Robert Patient 1', role: 'PATIENT', site_id: 1 }
-      };
-
-      if (testUsers[token]) {
-        req.user = testUsers[token];
-        await syncUserToDb(req.user!);
-        return next();
-      }
-
-      return res.status(403).json({ error: 'Failed to parse mock authorization token' });
+      return res.status(403).json({ error: 'Failed to parse local credentials token' });
     }
   }
 
@@ -110,15 +100,13 @@ export const authenticateToken = async (req: AuthenticatedRequest, res: Response
 
     // Extract roles from realm_access
     const roles = decoded.realm_access?.roles || [];
-    let mappedRole: 'ADMIN' | 'MONITOR' | 'DATA_ENTRY' | 'PATIENT' = 'PATIENT';
+    let mappedRole: 'ADMIN' | 'MONITOR' | 'DATA_ENTRY' = 'DATA_ENTRY';
     if (roles.includes('ADMIN')) mappedRole = 'ADMIN';
     else if (roles.includes('MONITOR')) mappedRole = 'MONITOR';
     else if (roles.includes('DATA_ENTRY')) mappedRole = 'DATA_ENTRY';
-    else if (roles.includes('PATIENT')) mappedRole = 'PATIENT';
 
-    // Extract site_id and patient_id custom attributes
+    // Extract site_id custom attribute
     const site_id = decoded.site_id ? parseInt(decoded.site_id, 10) : null;
-    const patient_id = decoded.patient_id || null;
 
     req.user = {
       id: decoded.sub,
@@ -126,7 +114,7 @@ export const authenticateToken = async (req: AuthenticatedRequest, res: Response
       name: decoded.name || decoded.preferred_username || 'OIDC User',
       role: mappedRole,
       site_id,
-      patient_id
+      patient_id: null
     };
 
     // Auto-sync with local DB cache
@@ -136,7 +124,7 @@ export const authenticateToken = async (req: AuthenticatedRequest, res: Response
 };
 
 // Check if user has one of the allowed roles
-export const requireRoles = (allowedRoles: Array<'ADMIN' | 'MONITOR' | 'DATA_ENTRY' | 'PATIENT'>) => {
+export const requireRoles = (allowedRoles: Array<'ADMIN' | 'MONITOR' | 'DATA_ENTRY'>) => {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
       return res.status(401).json({ error: 'Unauthorized' });

@@ -33,6 +33,11 @@ export default function AppLayoutClient({ children }: { children: React.ReactNod
   const pathname = usePathname();
 
   const [sites, setSites] = React.useState<any[]>([]);
+  const [isMounted, setIsMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   React.useEffect(() => {
     if (user) {
@@ -43,7 +48,7 @@ export default function AppLayoutClient({ children }: { children: React.ReactNod
     }
   }, [user]);
 
-  if (isLoading) {
+  if (isLoading || !isMounted) {
     return (
       <div style={{
         display: 'flex',

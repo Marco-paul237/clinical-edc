@@ -20,15 +20,6 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Respon
         'SELECT p.*, s.name as site_name FROM patients p JOIN sites s ON p.site_id = s.id WHERE p.site_id = $1 ORDER BY p.id DESC',
         [req.user.site_id]
       );
-    } else if (req.user.role === 'PATIENT') {
-      // Patients can only see their own profile
-      if (!req.user.patient_id) {
-        return res.status(400).json({ error: 'Patient account is not mapped to a clinical patient profile' });
-      }
-      result = await pool.query(
-        'SELECT p.*, s.name as site_name FROM patients p JOIN sites s ON p.site_id = s.id WHERE p.id = $1',
-        [req.user.patient_id]
-      );
     } else {
       // Admins and CRAs/Monitors can see all patients
       result = await pool.query(
@@ -66,9 +57,6 @@ router.get('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
     // Enforce Row-Level Security
     if (req.user.role === 'DATA_ENTRY' && req.user.site_id !== patient.site_id) {
       return res.status(403).json({ error: 'Access denied: CRC cannot view patients from other sites' });
-    }
-    if (req.user.role === 'PATIENT' && req.user.patient_id !== patient.id.toString()) {
-      return res.status(403).json({ error: 'Access denied: Patient cannot view other patient profiles' });
     }
 
     res.json(patient);
@@ -142,9 +130,6 @@ router.post('/:id/consent', authenticateToken, async (req: AuthenticatedRequest,
     // Enforce Access Control
     if (req.user.role === 'DATA_ENTRY' && req.user.site_id !== patient.site_id) {
       return res.status(403).json({ error: 'Access denied: CRC site mismatch' });
-    }
-    if (req.user.role === 'PATIENT' && req.user.patient_id !== patient.id.toString()) {
-      return res.status(403).json({ error: 'Access denied: Cannot sign consent for another patient' });
     }
 
     const updateResult = await pool.query(

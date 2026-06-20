@@ -8,17 +8,11 @@ const pool = new Pool({
 
 // --- Mock In-Memory Database State ---
 let sites = [
-  { id: 1, name: 'Berlin Charité Medical Center', location: 'Germany', created_at: new Date() },
-  { id: 2, name: 'New York Presbyterian Hospital', location: 'USA', created_at: new Date() }
+  { id: 1, name: 'Berlin Charité Medical Center', town: 'Berlin', country: 'Germany', location: 'Berlin, Germany', study_case: 'Hypertension', study_case_filename: 'hypertension_protocol.pdf', study_case_file_url: '', created_at: new Date() },
+  { id: 2, name: 'New York Presbyterian Hospital', town: 'New York', country: 'USA', location: 'New York, USA', study_case: 'Cancer', study_case_filename: 'cancer_protocol.pdf', study_case_file_url: '', created_at: new Date() }
 ];
 
-let users = [
-  { id: 'mock-admin', email: 'admin@trial.com', name: 'System Admin', role: 'ADMIN', site_id: null, password: 'password' },
-  { id: 'mock-crc-1', email: 'crc1@site1.org', name: 'John CRC Site 1', role: 'DATA_ENTRY', site_id: 1, password: 'password' },
-  { id: 'mock-crc-2', email: 'crc2@site2.org', name: 'Jane CRC Site 2', role: 'DATA_ENTRY', site_id: 2, password: 'password' },
-  { id: 'mock-cra', email: 'cra@sponsor.com', name: 'Alice CRA Monitor', role: 'MONITOR', site_id: null, password: 'password' },
-  { id: 'mock-patient-1', email: 'patient1@home.com', name: 'Robert Patient 1', role: 'PATIENT', site_id: 1, password: 'password' }
-];
+let users: any[] = [];
 
 let patients: any[] = [];
 let clinicalForms: any[] = [];
@@ -70,7 +64,12 @@ const mockQuery = async (text: string, params: any[] = []) => {
     const newSite = {
       id: sites.length + 1,
       name: params[0],
-      location: params[1],
+      town: params[1],
+      country: params[2],
+      location: params[3] || `${params[1]}, ${params[2]}`,
+      study_case: params[4] || 'General Study',
+      study_case_filename: params[5] || null,
+      study_case_file_url: params[6] || null,
       created_at: new Date()
     };
     sites.push(newSite);
@@ -433,10 +432,17 @@ export const initDb = async () => {
   }
 
   try {
-    const schemaPath = path.join(__dirname, 'schema.sql');
+    let schemaPath = path.join(__dirname, 'schema.sql');
+    if (!fs.existsSync(schemaPath)) {
+      schemaPath = path.join(__dirname, '../../src/db/schema.sql');
+    }
     const schemaSql = fs.readFileSync(schemaPath, 'utf8');
     await pool.query(schemaSql);
     console.log('[DATABASE] PostgreSQL schema initialized successfully.');
+    
+    // Purge mock user accounts from the database
+    await pool.query("DELETE FROM users WHERE id LIKE 'mock-%'");
+    console.log('[DATABASE] Cleaned up legacy mock users.');
   } catch (err) {
     console.warn('[DATABASE] PostgreSQL failed to execute schema.sql:', err);
     console.warn('Falling back to IN-MEMORY database.');
