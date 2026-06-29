@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/edc',
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5432/edc',
 });
 
 // --- Mock In-Memory Database State ---

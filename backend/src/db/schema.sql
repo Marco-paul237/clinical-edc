@@ -1,15 +1,6 @@
 -- Create schema for EDC clinical trials portal
 
--- Run migrations for existing installations to add new fields & constraints
-ALTER TABLE sites ADD COLUMN IF NOT EXISTS study_case VARCHAR(255) NOT NULL DEFAULT 'General Study';
-ALTER TABLE sites ADD COLUMN IF NOT EXISTS study_case_filename VARCHAR(255);
-ALTER TABLE sites ADD COLUMN IF NOT EXISTS study_case_file_url TEXT;
-
--- Remove PATIENT role constraint and update it for existing installations
-ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-DELETE FROM users WHERE role = 'PATIENT' OR id LIKE 'mock-%';
-ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('ADMIN', 'MONITOR', 'DATA_ENTRY'));
-
+-- 1. Create Core Tables first if they don't exist
 CREATE TABLE IF NOT EXISTS sites (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
@@ -31,6 +22,16 @@ CREATE TABLE IF NOT EXISTS users (
   password VARCHAR(255) DEFAULT 'password',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 2. Run migrations for existing installations to add new fields & constraints
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS study_case VARCHAR(255) NOT NULL DEFAULT 'General Study';
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS study_case_filename VARCHAR(255);
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS study_case_file_url TEXT;
+
+-- Remove PATIENT role constraint and update it for existing installations
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+DELETE FROM users WHERE role = 'PATIENT' OR id LIKE 'mock-%';
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('ADMIN', 'MONITOR', 'DATA_ENTRY'));
 
 CREATE TABLE IF NOT EXISTS patients (
   id SERIAL PRIMARY KEY,
