@@ -48,6 +48,14 @@ export default function DashboardPage() {
   const [newSiteStudyCase, setNewSiteStudyCase] = useState('');
   const [newSiteFile, setNewSiteFile] = useState<File | null>(null);
 
+  // States for editing clinical sites
+  const [editingClinicalSiteId, setEditingClinicalSiteId] = useState<number | null>(null);
+  const [editSiteName, setEditSiteName] = useState('');
+  const [editSiteTown, setEditSiteTown] = useState('');
+  const [editSiteCountry, setEditSiteCountry] = useState('');
+  const [editSiteStudyCase, setEditSiteStudyCase] = useState('');
+  const [editSiteFile, setEditSiteFile] = useState<File | null>(null);
+
   useEffect(() => {
     if (!user) {
       router.push('/login');
@@ -100,7 +108,7 @@ export default function DashboardPage() {
         
         setLoading(false);
       } catch (err: any) {
-        console.error(err);
+        console.warn(err);
         setError('Failed to load dashboard data. Ensure the database is fully seeded.');
         setLoading(false);
       }
@@ -131,7 +139,7 @@ export default function DashboardPage() {
       
       alert('CDISC SDTM Dataset exported successfully and recorded in audit trail!');
     } catch (err) {
-      console.error(err);
+      console.warn(err);
       alert('Failed to export dataset.');
     }
   };
@@ -166,7 +174,7 @@ export default function DashboardPage() {
       const updatedUsers = await apiFetch('/api/auth/users');
       setUsersList(updatedUsers);
     } catch (err: any) {
-      console.error(err);
+      console.warn(err);
       alert(err.message || 'Failed to add user.');
     }
   };
@@ -218,7 +226,7 @@ export default function DashboardPage() {
           const updatedSites = await apiFetch('/api/sites');
           setSitesList(updatedSites);
         } catch (err: any) {
-          console.error(err);
+          console.warn(err);
           alert(err.message || 'Failed to create site.');
         }
       };
@@ -227,7 +235,7 @@ export default function DashboardPage() {
       };
       reader.readAsDataURL(newSiteFile);
     } catch (err: any) {
-      console.error(err);
+      console.warn(err);
       alert(err.message || 'Failed to process file.');
     }
   };
@@ -249,7 +257,7 @@ export default function DashboardPage() {
       const updatedUsers = await apiFetch('/api/auth/users');
       setUsersList(updatedUsers);
     } catch (err: any) {
-      console.error(err);
+      console.warn(err);
       alert(err.message || 'Failed to update user role.');
     }
   };
@@ -268,8 +276,93 @@ export default function DashboardPage() {
       const updatedUsers = await apiFetch('/api/auth/users');
       setUsersList(updatedUsers);
     } catch (err: any) {
-      console.error(err);
+      console.warn(err);
       alert(err.message || 'Failed to delete user.');
+    }
+  };
+
+  const startEditSite = (site: any) => {
+    setEditingClinicalSiteId(site.id);
+    setEditSiteName(site.name);
+    setEditSiteTown(site.town || '');
+    setEditSiteCountry(site.country || '');
+    setEditSiteStudyCase(site.study_case || '');
+    setEditSiteFile(null);
+  };
+
+  const handleUpdateSite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingClinicalSiteId) return;
+
+    try {
+      const performUpdate = async (base64Data?: string) => {
+        try {
+          const updatedSite = await apiFetch(`/api/sites/${editingClinicalSiteId}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              name: editSiteName,
+              town: editSiteTown,
+              country: editSiteCountry,
+              study_case: editSiteStudyCase,
+              study_case_filename: editSiteFile ? editSiteFile.name : undefined,
+              study_case_file_data: base64Data
+            })
+          });
+
+          alert(`Site "${updatedSite.name}" updated successfully!`);
+          setEditingClinicalSiteId(null);
+          setEditSiteName('');
+          setEditSiteTown('');
+          setEditSiteCountry('');
+          setEditSiteStudyCase('');
+          setEditSiteFile(null);
+
+          // Refresh sites list
+          const updatedSites = await apiFetch('/api/sites');
+          setSitesList(updatedSites);
+        } catch (err: any) {
+          console.warn(err);
+          alert(err.message || 'Failed to update site.');
+        }
+      };
+
+      if (editSiteFile) {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const base64Data = reader.result as string;
+          await performUpdate(base64Data);
+        };
+        reader.onerror = () => {
+          alert('Failed to read the file.');
+        };
+        reader.readAsDataURL(editSiteFile);
+      } else {
+        await performUpdate();
+      }
+    } catch (err: any) {
+      console.warn(err);
+      alert(err.message || 'Failed to process file.');
+    }
+  };
+
+  const handleDeleteSite = async (siteId: number) => {
+    if (!confirm('Are you sure you want to delete this clinical site? This will disassociate users and delete all patient registries associated with this site.')) {
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`/api/sites/${siteId}`, {
+        method: 'DELETE'
+      });
+
+      alert(res.message || 'Site deleted successfully!');
+      
+      // Refresh sites list
+      const updatedSites = await apiFetch('/api/sites');
+      setSitesList(updatedSites);
+    } catch (err: any) {
+      console.warn(err);
+      alert(err.message || 'Failed to delete site.');
     }
   };
 
@@ -592,79 +685,164 @@ export default function DashboardPage() {
 
               <hr style={{ margin: '1.5rem 0', borderColor: 'var(--border-color)', opacity: 0.5 }} />
 
-              <h4 style={{ marginBottom: '1rem', fontWeight: 600 }}>Create New Clinical Site</h4>
-              <form onSubmit={handleAddSite} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Site Name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Paris Saint-Louis Hospital"
-                    className="form-input"
-                    value={newSiteName}
-                    onChange={(e) => setNewSiteName(e.target.value)}
-                    style={{ fontSize: '0.85rem' }}
-                  />
-                </div>
+              {editingClinicalSiteId ? (
+                <>
+                  <h4 style={{ marginBottom: '1rem', fontWeight: 600, color: '#38bdf8' }}>Edit Clinical Site</h4>
+                  <form onSubmit={handleUpdateSite} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Site Name</label>
+                      <input
+                        type="text"
+                        required
+                        className="form-input"
+                        value={editSiteName}
+                        onChange={(e) => setEditSiteName(e.target.value)}
+                        style={{ fontSize: '0.85rem' }}
+                      />
+                    </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Town (City)</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Paris"
-                      className="form-input"
-                      value={newSiteTown}
-                      onChange={(e) => setNewSiteTown(e.target.value)}
-                      style={{ fontSize: '0.85rem' }}
-                    />
-                  </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Town (City)</label>
+                        <input
+                          type="text"
+                          required
+                          className="form-input"
+                          value={editSiteTown}
+                          onChange={(e) => setEditSiteTown(e.target.value)}
+                          style={{ fontSize: '0.85rem' }}
+                        />
+                      </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Country</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="France"
-                      className="form-input"
-                      value={newSiteCountry}
-                      onChange={(e) => setNewSiteCountry(e.target.value)}
-                      style={{ fontSize: '0.85rem' }}
-                    />
-                  </div>
-                </div>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Country</label>
+                        <input
+                          type="text"
+                          required
+                          className="form-input"
+                          value={editSiteCountry}
+                          onChange={(e) => setEditSiteCountry(e.target.value)}
+                          style={{ fontSize: '0.85rem' }}
+                        />
+                      </div>
+                    </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Study Case (e.g. cancer, pneumonia)</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Cancer Study"
-                    className="form-input"
-                    value={newSiteStudyCase}
-                    onChange={(e) => setNewSiteStudyCase(e.target.value)}
-                    style={{ fontSize: '0.85rem' }}
-                  />
-                </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Study Case (e.g. cancer, pneumonia)</label>
+                      <input
+                        type="text"
+                        required
+                        className="form-input"
+                        value={editSiteStudyCase}
+                        onChange={(e) => setEditSiteStudyCase(e.target.value)}
+                        style={{ fontSize: '0.85rem' }}
+                      />
+                    </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Protocol Document (PDF, Doc, txt)</label>
-                  <input
-                    id="site-file-input"
-                    type="file"
-                    required
-                    accept=".pdf,.doc,.docx,.txt,.csv"
-                    className="form-input"
-                    onChange={handleFileChange}
-                    style={{ fontSize: '0.85rem', padding: '0.35rem 0.75rem' }}
-                  />
-                </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Protocol Document (Leave blank to keep current)</label>
+                      <input
+                        type="file"
+                        accept=".pdf,.doc,.docx,.txt,.csv"
+                        className="form-input"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            setEditSiteFile(e.target.files[0]);
+                          } else {
+                            setEditSiteFile(null);
+                          }
+                        }}
+                        style={{ fontSize: '0.85rem', padding: '0.35rem 0.75rem' }}
+                      />
+                    </div>
 
-                <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem', justifyContent: 'center' }}>
-                  Create Site
-                </button>
-              </form>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      <button type="submit" className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
+                        Save Changes
+                      </button>
+                      <button type="button" onClick={() => setEditingClinicalSiteId(null)} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </>
+              ) : (
+                <>
+                  <h4 style={{ marginBottom: '1rem', fontWeight: 600 }}>Create New Clinical Site</h4>
+                  <form onSubmit={handleAddSite} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Site Name</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Paris Saint-Louis Hospital"
+                        className="form-input"
+                        value={newSiteName}
+                        onChange={(e) => setNewSiteName(e.target.value)}
+                        style={{ fontSize: '0.85rem' }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Town (City)</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Paris"
+                          className="form-input"
+                          value={newSiteTown}
+                          onChange={(e) => setNewSiteTown(e.target.value)}
+                          style={{ fontSize: '0.85rem' }}
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Country</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="France"
+                          className="form-input"
+                          value={newSiteCountry}
+                          onChange={(e) => setNewSiteCountry(e.target.value)}
+                          style={{ fontSize: '0.85rem' }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Study Case (e.g. cancer, pneumonia)</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Cancer Study"
+                        className="form-input"
+                        value={newSiteStudyCase}
+                        onChange={(e) => setNewSiteStudyCase(e.target.value)}
+                        style={{ fontSize: '0.85rem' }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Protocol Document (PDF, Doc, txt)</label>
+                      <input
+                        id="site-file-input"
+                        type="file"
+                        required
+                        accept=".pdf,.doc,.docx,.txt,.csv"
+                        className="form-input"
+                        onChange={handleFileChange}
+                        style={{ fontSize: '0.85rem', padding: '0.35rem 0.75rem' }}
+                      />
+                    </div>
+
+                    <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem', justifyContent: 'center' }}>
+                      Create Site
+                    </button>
+                  </form>
+                </>
+              )}
 
               <hr style={{ margin: '1.5rem 0', borderColor: 'var(--border-color)', opacity: 0.5 }} />
 
@@ -676,12 +854,13 @@ export default function DashboardPage() {
                       <th style={{ padding: '0.5rem 0.75rem' }}>Site</th>
                       <th style={{ padding: '0.5rem 0.75rem' }}>Study Case</th>
                       <th style={{ padding: '0.5rem 0.75rem' }}>Protocol</th>
+                      <th style={{ padding: '0.5rem 0.75rem' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sitesList.length === 0 ? (
                       <tr>
-                        <td colSpan={3} style={{ padding: '0.75rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                        <td colSpan={4} style={{ padding: '0.75rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
                           No sites created.
                         </td>
                       </tr>
@@ -710,6 +889,28 @@ export default function DashboardPage() {
                             ) : (
                               <span style={{ color: 'var(--color-text-muted)' }}>None</span>
                             )}
+                          </td>
+                          <td style={{ padding: '0.5rem 0.75rem', display: 'flex', gap: '0.35rem' }}>
+                            <button
+                              onClick={() => startEditSite(s)}
+                              className="btn btn-secondary"
+                              style={{ padding: '0.2rem 0.4rem', fontSize: '0.7rem' }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSite(s.id)}
+                              className="btn"
+                              style={{
+                                padding: '0.2rem 0.4rem',
+                                fontSize: '0.7rem',
+                                background: 'rgba(239, 68, 68, 0.08)',
+                                border: '1px solid rgba(239, 68, 68, 0.2)',
+                                color: 'var(--color-error)'
+                              }}
+                            >
+                              Delete
+                            </button>
                           </td>
                         </tr>
                       ))

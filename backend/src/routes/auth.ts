@@ -80,8 +80,8 @@ router.post('/login', async (req: Request, res: Response) => {
 
   try {
     const result = await pool.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email.toLowerCase().trim()]
+      'SELECT * FROM users WHERE email = $1 OR id = $2',
+      [email.toLowerCase().trim(), email.toLowerCase().trim()]
     );
 
     if (result.rows.length === 0) {

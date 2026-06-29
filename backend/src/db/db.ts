@@ -426,9 +426,30 @@ const mockQuery = async (text: string, params: any[] = []) => {
 };
 
 export const initDb = async () => {
-  if (useMemoryDb) {
-    console.log('[DATABASE] Initialized IN-MEMORY mock engine.');
-    return;
+  let client;
+  let retries = 10;
+  let connected = false;
+
+  console.log('[DATABASE] Attempting to connect to PostgreSQL...');
+  while (retries > 0 && !connected) {
+    try {
+      client = await pool.connect();
+      connected = true;
+      console.log('[DATABASE] Connected to PostgreSQL server.');
+      client.release();
+    } catch (err: any) {
+      retries--;
+      console.warn(`[DATABASE] Connection failed. Retries left: ${retries}. Error: ${err.message}`);
+      if (retries === 0) {
+        console.error('[DATABASE] Critical: Failed to connect to PostgreSQL after all retries.');
+        console.warn('Falling back to IN-MEMORY database (WARNING: Data will not persist).');
+        useMemoryDb = true;
+        pool.query = mockQuery as any;
+        return;
+      }
+      // Wait 2 seconds before retrying
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
   }
 
   try {
@@ -443,24 +464,12 @@ export const initDb = async () => {
     // Purge mock user accounts from the database
     await pool.query("DELETE FROM users WHERE id LIKE 'mock-%'");
     console.log('[DATABASE] Cleaned up legacy mock users.');
-  } catch (err) {
-    console.warn('[DATABASE] PostgreSQL failed to execute schema.sql:', err);
-    console.warn('Falling back to IN-MEMORY database.');
+  } catch (err: any) {
+    console.error('[DATABASE] PostgreSQL failed to execute schema.sql:', err);
+    console.warn('Falling back to IN-MEMORY database (WARNING: Data will not persist).');
     useMemoryDb = true;
     pool.query = mockQuery as any;
   }
 };
-
-// Check DB connectivity on import
-pool.connect((err, client, release) => {
-  if (err) {
-    console.warn('[DATABASE] Warning: Could not connect to PostgreSQL server. Initializing IN-MEMORY database mode.');
-    useMemoryDb = true;
-    pool.query = mockQuery as any;
-  } else {
-    console.log('[DATABASE] Connected to PostgreSQL server.');
-    if (release) release();
-  }
-});
 
 export default pool;

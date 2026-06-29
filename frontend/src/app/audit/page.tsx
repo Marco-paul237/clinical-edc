@@ -29,7 +29,7 @@ export default function AuditTrailPage() {
       setLogs(auditLogs);
       setLoading(false);
     } catch (err: any) {
-      console.error(err);
+      console.warn(err);
       setError(err.message || 'Failed to fetch audit logs');
       setLoading(false);
     }

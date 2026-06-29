@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '../../context/AuthContext';
 import { ShieldAlert, Key, User, Activity, Lock, Mail, Users, Sparkles, Building2 } from 'lucide-react';
 
@@ -14,6 +15,7 @@ export interface Site {
 
 export default function LoginPage() {
   const { user, login, logout } = useAuth();
+  const router = useRouter();
 
   // Tab Selection State (Removed Mock Profiles tab)
   const [activeTab, setActiveTab] = useState<'credentials' | 'oidc'>('credentials');
@@ -76,7 +78,13 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (user) {
-      logout();
+      if (user.role === 'DATA_ENTRY') {
+        router.push('/patients');
+      } else if (user.role === 'MONITOR') {
+        router.push('/audit');
+      } else {
+        router.push('/');
+      }
     }
   }, [user]);
 

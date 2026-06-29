@@ -44,7 +44,7 @@ export default function SafetyAlertsPage() {
       }));
       setLoading(false);
     } catch (err: any) {
-      console.error(err);
+      console.warn(err);
       setError(err.message || 'Failed to load safety alerts');
       setLoading(false);
     }

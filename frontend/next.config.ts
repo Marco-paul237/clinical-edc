@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ['antitrust-deed-survival.ngrok-free.dev', '*.ngrok-free.dev'],
   async rewrites() {
     return [
       {

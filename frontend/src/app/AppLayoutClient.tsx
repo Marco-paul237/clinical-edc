@@ -56,20 +56,20 @@ export default function AppLayoutClient({ children }: { children: React.ReactNod
         alignItems: 'center',
         justifyContent: 'center',
         height: '100vh',
-        backgroundColor: '#f8fafc',
-        color: '#0f172a',
+        backgroundColor: '#0a0e17',
+        color: '#f3f4f6',
         gap: '1rem',
         fontFamily: 'sans-serif'
       }}>
         <div style={{
           width: '50px',
           height: '50px',
-          border: '3px solid rgba(30, 58, 138, 0.1)',
-          borderTopColor: '#1e3a8a',
+          border: '3px solid rgba(20, 184, 166, 0.1)',
+          borderTopColor: '#14b8a6',
           borderRadius: '50%',
           animation: 'spin 1s linear infinite'
         }} />
-        <p style={{ fontSize: '0.9rem', color: '#4b5563', letterSpacing: '0.05em' }}>
+        <p style={{ fontSize: '0.9rem', color: '#9ca3af', letterSpacing: '0.05em' }}>
           INITIALIZING SECURE SESSION...
         </p>
         <style>{`
@@ -160,19 +160,48 @@ export default function AppLayoutClient({ children }: { children: React.ReactNod
         <div className="user-banner">
           <div className="user-banner-details">
             <div>
-              <span className="user-banner-label">Clinical Study Site</span>
+              <label htmlFor="site-select" className="user-banner-label">Clinical Study Site</label>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.15rem' }}>
-                <span style={{
-                  background: '#f8fafc',
-                  color: '#0f172a',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '4px',
-                  padding: '0.25rem 0.5rem',
-                  fontSize: '0.85rem',
-                  fontWeight: 600
-                }}>
-                  {sites.find(s => s.id === user.site_id)?.name || (user.site_id ? `Site #${user.site_id}` : 'Global Study Control Center')}
-                </span>
+                {user.role === 'ADMIN' ? (
+                  <select
+                    id="site-select"
+                    title="Clinical Study Site"
+                    aria-label="Clinical Study Site"
+                    value={user.site_id || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      switchContext(user.role, val ? parseInt(val, 10) : null);
+                    }}
+                    style={{
+                      background: '#f8fafc',
+                      color: '#0f172a',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '4px',
+                      padding: '0.25rem 0.5rem',
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="">Global Study Control Center</option>
+                    {sites.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span style={{
+                    background: '#f8fafc',
+                    color: '#0f172a',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '4px',
+                    padding: '0.25rem 0.5rem',
+                    fontSize: '0.85rem',
+                    fontWeight: 600
+                  }}>
+                    {sites.find(s => s.id === user.site_id)?.name || (user.site_id ? `Site #${user.site_id}` : 'Global Study Control Center')}
+                  </span>
+                )}
               </div>
             </div>
             <div className="user-banner-divider" style={{ width: '1px', height: '24px', backgroundColor: 'var(--border-color)' }} />

@@ -75,7 +75,7 @@ export default function PatientsPage() {
       
       setLoading(false);
     } catch (err: any) {
-      console.error(err);
+      console.warn(err);
       setError(err.message || 'Failed to fetch patients list');
       setLoading(false);
     }
@@ -112,7 +112,7 @@ export default function PatientsPage() {
       setIsModalOpen(false);
       loadData();
     } catch (err: any) {
-      console.error(err);
+      console.warn(err);
       alert(err.message || 'Failed to register patient');
     }
   };
