@@ -8,7 +8,6 @@ dist/
 build/
 
 # Environment configurations
-.env
 .env.*
 !.env.example
 
