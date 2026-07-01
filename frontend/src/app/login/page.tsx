@@ -17,9 +17,6 @@ export default function LoginPage() {
   const { user, login, logout } = useAuth();
   const router = useRouter();
 
-  // Tab Selection State (Removed Mock Profiles tab)
-  const [activeTab, setActiveTab] = useState<'credentials' | 'oidc'>('credentials');
-  
   // Credentials Sub-mode
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
 
@@ -284,24 +281,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Tab Selection */}
-        <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: '1.5rem' }}>
-          <button 
-            type="button" 
-            onClick={() => setActiveTab('credentials')} 
-            className={`tab-btn ${activeTab === 'credentials' ? 'active' : ''}`}
-          >
-            Portal Account
-          </button>
 
-          <button 
-            type="button" 
-            onClick={() => setActiveTab('oidc')} 
-            className={`tab-btn ${activeTab === 'oidc' ? 'active' : ''}`}
-          >
-            Enterprise SSO
-          </button>
-        </div>
 
         {/* Error banner */}
         {error && (
@@ -318,9 +298,8 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* TAB 1: Credentials (Login & Sign Up) */}
-        {activeTab === 'credentials' && (
-          <div>
+        {/* Credentials Form (Login & Sign Up) */}
+        <div>
             {authMode === 'login' || !isBackdoor ? (
               // Login Form
               <form onSubmit={handleCredentialsLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -373,6 +352,8 @@ export default function LoginPage() {
                 <button type="submit" className="btn-gradient" disabled={loading}>
                   {loading ? 'Signing In...' : 'Sign In'}
                 </button>
+
+
 
                 {isBackdoor && (
                   <p style={{ textAlign: 'center', fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.5rem' }}>
@@ -458,44 +439,7 @@ export default function LoginPage() {
               </form>
             )}
           </div>
-        )}
-
-        {/* TAB 2: OIDC Enterprise Identity */}
-        {activeTab === 'oidc' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              background: 'rgba(20, 184, 166, 0.08)',
-              border: '1px solid rgba(20, 184, 166, 0.2)',
-              borderRadius: '8px',
-              padding: '0.75rem 1rem',
-              marginBottom: '1rem',
-              color: '#14b8a6',
-              fontSize: '0.85rem'
-            }}>
-              <ShieldAlert style={{ flexShrink: 0, width: '18px' }} />
-              <span>
-                Standard OIDC authentication mode is active. You will be redirected to the secure Keycloak server on port 8081.
-              </span>
-            </div>
-
-            <button 
-              type="button" 
-              onClick={handleKeycloakLogin} 
-              className="btn-gradient" 
-              style={{
-                width: '100%',
-                justifyContent: 'center',
-                padding: '1rem'
-              }}
-            >
-              Authenticate with Keycloak SSO
-            </button>
-          </div>
-        )}
-      </div>
+        </div>
     </div>
   );
 }
